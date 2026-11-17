@@ -43,6 +43,11 @@ function parseToolMeta(value: unknown): ToolMeta | undefined {
     if (typeof v.lowImpact !== "boolean") return undefined;
     meta.lowImpact = v.lowImpact;
   }
+  if (v.fanout !== undefined) {
+    const fanout = v.fanout as Record<string, unknown> | null;
+    if (!fanout || typeof fanout.arg !== "string") return undefined;
+    meta.fanout = { arg: fanout.arg };
+  }
   if (v.egress !== undefined) {
     const egress = v.egress as Record<string, unknown> | null;
     if (

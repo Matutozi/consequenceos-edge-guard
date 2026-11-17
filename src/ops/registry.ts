@@ -22,6 +22,19 @@ export interface ToolMeta {
    * organization's domains. Checked deterministically, before any model call.
    */
   egress?: { arg: string; outside: "deny" | "escalate" };
+  /**
+   * The argument naming who or what the call acts on. A wildcard there ("all", "*",
+   * "everyone") means the call acts on everything, so a person approves it whatever
+   * the assessor says. Checked deterministically, before any model call.
+   */
+  fanout?: { arg: string };
+}
+
+/** Values that mean "every target" in a fanout argument. Compared without case or spaces. */
+export const WILDCARD_TARGETS = ["all", "*", "everyone", "everybody", "all users", "every user", "any"];
+
+export function isWildcardTarget(value: unknown): boolean {
+  return typeof value === "string" && WILDCARD_TARGETS.includes(value.trim().toLowerCase());
 }
 
 /** Domains that count as inside the organization. */
@@ -59,6 +72,7 @@ export const defaultRegistry: ToolRegistry = {
     sensitivity: "internal",
     reversible: true,
     readOnly: false,
+    fanout: { arg: "userId" },
   },
   disable_user: {
     system: "Northwind identity provider",
@@ -66,6 +80,7 @@ export const defaultRegistry: ToolRegistry = {
     sensitivity: "confidential",
     reversible: true,
     readOnly: false,
+    fanout: { arg: "userId" },
   },
   add_ticket_note: {
     system: "Northwind helpdesk",

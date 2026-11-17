@@ -23,11 +23,12 @@ describe("parseRegistry", () => {
         bad_sensitivity: { ...defaultRegistry.read_ticket, sensitivity: "secret" },
         bad_egress: { ...defaultRegistry.export_customers, egress: { arg: "destination", outside: "allow" } },
         bad_low_impact: { ...defaultRegistry.read_ticket, lowImpact: "yes" },
+        bad_fanout: { ...defaultRegistry.revoke_sessions, fanout: { field: "userId" } },
         "Bad-Name": defaultRegistry.read_ticket,
       }),
     );
     expect(Object.keys(registry)).toEqual(["read_ticket"]);
-    expect(rejected).toEqual(["loose_tool", "bad_sensitivity", "bad_egress", "bad_low_impact", "Bad-Name"]);
+    expect(rejected).toEqual(["loose_tool", "bad_sensitivity", "bad_egress", "bad_low_impact", "bad_fanout", "Bad-Name"]);
   });
 
   it("rejects a registry that is not an object", () => {

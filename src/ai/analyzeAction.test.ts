@@ -17,6 +17,7 @@ vi.mock("firebase/ai", () => ({
   InferenceMode: {
     PREFER_ON_DEVICE: "prefer_on_device",
     ONLY_ON_DEVICE: "only_on_device",
+    ONLY_IN_CLOUD: "only_in_cloud",
   },
   InferenceSource: { ON_DEVICE: "on_device", IN_CLOUD: "in_cloud" },
   Schema: {
@@ -115,6 +116,22 @@ describe("analyzeAction privacy routing", () => {
   it("discards a sensitive result that did not run on device", async () => {
     (globalThis as { LanguageModel?: unknown }).LanguageModel = readyModel();
     await expect(analyzeAction(confidential)).rejects.toThrow(/unexpectedly processed outside/);
+  });
+});
+
+describe("forced routes for the evaluation harness", () => {
+  it("auto keeps sensitive data on the device", async () => {
+    await expect(analyzeAction(confidential)).rejects.toBeInstanceOf(OnDeviceUnavailableError);
+  });
+
+  it("cloud sends every class to the cloud only when asked", async () => {
+    await analyzeAction(confidential, { route: "cloud" });
+    expect(sdk.getGenerativeModel.mock.calls[0][1].mode).toBe("only_in_cloud");
+  });
+
+  it("device forces the on-device path even for internal data", async () => {
+    await expect(analyzeAction(internal, { route: "device" })).rejects.toBeInstanceOf(OnDeviceUnavailableError);
+    expect(sdk.getGenerativeModel).not.toHaveBeenCalled();
   });
 });
 

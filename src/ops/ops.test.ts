@@ -93,6 +93,20 @@ describe("guardToolCall", () => {
     expect(receipt.decision.decision).toBe("allow");
   });
 
+  it("sends a wildcard target to a person without asking a model", async () => {
+    for (const userId of ["all", " ALL ", "*", "everyone"]) {
+      const { receipt } = await guard(call("revoke_sessions", { userId }));
+      expect(receipt.decision.decision).toBe("require_approval");
+      expect(receipt.decision.rationale[0]).toMatch(/targets everyone/);
+    }
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("still asks the assessor about one named user", async () => {
+    await guard(call("revoke_sessions", { userId: "ada.okafor" }));
+    expect(analyzeAction).toHaveBeenCalledOnce();
+  });
+
   it("treats an unregistered tool as the worst case", async () => {
     const { receipt } = await guard(call("run_shell", { cmd: "rm -rf /" }));
     expect(receipt.decision.decision).toBe("deny");

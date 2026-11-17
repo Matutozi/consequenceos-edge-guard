@@ -11,6 +11,7 @@ import type {
 import {
   INTERNAL_DOMAINS,
   isInternalDestination,
+  isWildcardTarget,
   lookupTool,
   type ToolMeta,
   type ToolRegistry,
@@ -58,6 +59,20 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
+/** A wildcard target means the call acts on everything; never leave that to a model. */
+function evaluateFanout(call: ToolCall, meta: ToolMeta): GuardDecision | undefined {
+  if (!meta.fanout) return undefined;
+  const target = call.args[meta.fanout.arg];
+  if (!isWildcardTarget(target)) return undefined;
+  return {
+    decision: "require_approval",
+    rationale: [
+      `${call.tool} targets everyone (${meta.fanout.arg}: ${JSON.stringify(target)}), so a person has to approve it. ` +
+        "Decided by rule, with no model call.",
+    ],
+  };
+}
+
 function isFastPath(meta: ToolMeta): boolean {
   const lowSensitivity = meta.sensitivity === "public" || meta.sensitivity === "internal";
   return lowSensitivity && meta.reversible && (meta.readOnly || meta.lowImpact === true);
@@ -85,7 +100,8 @@ export interface ToolGuardOptions extends AnalyzeOptions {
 /**
  * Edge Guard for agent tool calls. Order of evaluation:
  * 1. Egress rule: data leaving the organization's domains (no model).
- * 2. Hard rules on registry properties (no model; unknown tools are the worst case).
+ * 2. Hard rules on registry properties (no model; unknown tools are the worst case),
+ *    and the fanout rule: a wildcard target goes to a person.
  * 3. Fast path: reads, and low-impact changes that can be undone, on public or
  *    internal data (no model). Model calls are kept for real judgement.
  * 4. Risk assessment (Gemini Nano first) and policy.
@@ -101,7 +117,7 @@ export async function guardToolCall(
 
   let receipt: DecisionReceipt;
   const egressDecision = evaluateEgress(call, meta, internalDomains);
-  const hardDecision = egressDecision ?? evaluateHardRules(proposal);
+  const hardDecision = egressDecision ?? evaluateHardRules(proposal) ?? evaluateFanout(call, meta);
   if (hardDecision) {
     if (!meta.registered) {
       hardDecision.rationale.unshift(
