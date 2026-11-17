@@ -53,6 +53,7 @@ export async function createDecisionReceipt(
     assessment: analysis.assessment,
     decision,
     inferenceSource: analysis.inferenceSource,
+    ...(analysis.secondOpinion && { secondOpinion: analysis.secondOpinion }),
     ...(toolCall && { toolCall }),
   };
 

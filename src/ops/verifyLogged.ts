@@ -61,10 +61,14 @@ export async function checkLoggedReceipt(
   checks.push({
     id: "binding",
     label: "Bound to one exact call",
-    status: receipt.toolCall ? "pass" : "fail",
-    detail: receipt.toolCall
-      ? `Authorizes only ${receipt.toolCall.tool}(${canonicalJson(receipt.toolCall.args)}). The executor refuses any other arguments.`
-      : "The receipt does not name a tool call, so no executor should accept it.",
+    // When the contents no longer match the digest, the call they name can't be trusted,
+    // so this is not checked rather than shown as passing.
+    status: !receipt.toolCall ? "fail" : digestOk ? "pass" : "not-applicable",
+    detail: !receipt.toolCall
+      ? "The receipt does not name a tool call, so no executor should accept it."
+      : digestOk
+        ? `Authorizes only ${receipt.toolCall.tool}(${canonicalJson(receipt.toolCall.args)}). The executor refuses any other arguments.`
+        : "Not checked: the contents were changed, so the call they name can't be trusted.",
   });
 
   const needsApproval = receipt.decision.decision === "require_approval";
@@ -111,8 +115,10 @@ export async function checkLoggedReceipt(
   checks.push({
     id: "outcome",
     label: "Outcome is consistent with the decision",
-    status: outcomeProblem ? "fail" : "pass",
-    detail: outcomeProblem ?? `Decision ${decision.replace("_", " ")}, outcome ${doc.outcome}.`,
+    status: !digestOk ? "not-applicable" : outcomeProblem ? "fail" : "pass",
+    detail: !digestOk
+      ? "Not checked: the decision in this copy was changed after it was issued, so there is nothing trustworthy to compare the outcome with."
+      : (outcomeProblem ?? `Decision ${decision.replace("_", " ")}, outcome ${doc.outcome}.`),
   });
 
   return checks;

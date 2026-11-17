@@ -252,6 +252,17 @@ export default function PolicyPage() {
                 <label><input type="checkbox" checked={draft.policy.fastPathLowImpact} onChange={(e) => setPolicy("fastPathLowImpact", e.target.checked)} /> Low-impact changes</label>
               </div>
             </div>
+            <label className="check-row" style={{ gridColumn: "1 / -1" }}>
+              <span>
+                Gemini Nano needs a cloud second opinion to allow
+                <small>Off lets Nano allow alone. The on-device evals found it can be talked into allowing injected calls.</small>
+              </span>
+              <input
+                type="checkbox"
+                checked={draft.policy.secondOpinionForDeviceAllows}
+                onChange={(e) => setPolicy("secondOpinionForDeviceAllows", e.target.checked)}
+              />
+            </label>
             <label className="field">
               Targets that mean everyone
               <input
@@ -315,6 +326,8 @@ export default function PolicyPage() {
           <p className="quiet" style={{ margin: 0 }}>
             Rules are re-run exactly. Judgement cases reuse the assessments the model gave in that run: the
             policy changes what is done with an assessment, not the assessment, so no model is called here.
+            The preview applies policy to one assessment per case; it does not model the cloud second opinion
+            on Gemini Nano's allows.
           </p>
           <Verdict changed={changed} newFalseAllows={newFalseAllows} draftNeeds={draftSummary.needsAssessment} hasAssessments={!!assessmentSet} />
           <div className="table-scroll">

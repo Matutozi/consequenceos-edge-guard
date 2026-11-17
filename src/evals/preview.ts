@@ -15,7 +15,7 @@ export interface PolicyDraft {
 
 /** Recorded model assessments by case ID, from an eval run. */
 export interface AssessmentSet {
-  route: "cloud" | "device";
+  route: "cloud" | "device" | "hybrid";
   model: string;
   date: string;
   assessments: Record<string, RiskAssessment>;

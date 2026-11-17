@@ -26,6 +26,12 @@ export interface PolicyConfig {
   wildcardTargets: string[];
   /** Seconds the assessor may take before the call goes to a person. */
   assessorTimeoutSeconds: number;
+  /**
+   * Gemini Nano may escalate or block on its own, but to allow a call it needs the
+   * cloud to agree. Off: Nano's allow stands alone (the on-device evals found it can
+   * be talked into allowing injected calls).
+   */
+  secondOpinionForDeviceAllows: boolean;
 }
 
 export const DEFAULT_POLICY: PolicyConfig = {
@@ -38,6 +44,7 @@ export const DEFAULT_POLICY: PolicyConfig = {
   fastPathLowImpact: true,
   wildcardTargets: ["all", "*", "everyone", "everybody", "all users", "every user", "any"],
   assessorTimeoutSeconds: 20,
+  secondOpinionForDeviceAllows: true,
 };
 
 /** The value each field falls back to when it is malformed: the strictest one. */
@@ -51,6 +58,7 @@ const STRICTEST: PolicyConfig = {
   fastPathLowImpact: false,
   wildcardTargets: DEFAULT_POLICY.wildcardTargets,
   assessorTimeoutSeconds: DEFAULT_POLICY.assessorTimeoutSeconds,
+  secondOpinionForDeviceAllows: true,
 };
 
 export const RISK_ORDER: RiskLevel[] = ["low", "medium", "high", "critical"];
@@ -74,6 +82,7 @@ const checks: { [K in keyof PolicyConfig]: (v: unknown) => boolean } = {
   wildcardTargets: (v) =>
     Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.trim().length > 0 && x.length <= 40),
   assessorTimeoutSeconds: (v) => typeof v === "number" && Number.isFinite(v) && v >= 5 && v <= 60,
+  secondOpinionForDeviceAllows: (v) => typeof v === "boolean",
 };
 
 export interface ParsedPolicy {

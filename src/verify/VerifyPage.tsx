@@ -15,7 +15,7 @@ import { canonicalJson } from "../domain/receipt";
 import { approvalStore, type ApproverDoc } from "../ops/approvals";
 import { receiptLog, type LoggedReceipt, type RunDoc } from "../ops/receiptLog";
 import { allPassed, checkLoggedReceipt, checkPastedReceipt, type Check, type PastedCheck } from "../ops/verifyLogged";
-import { decisionBadge, decisionLabel, routeLine } from "../ui/format";
+import { decisionBadge, decisionLabel, receiptRoute } from "../ui/format";
 
 interface Loaded {
   original: LoggedReceipt;
@@ -209,7 +209,12 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
                     {shown.receipt.decision.rationale[0]}
                   </dd>
                   <dt>Route</dt>
-                  <dd>{routeLine(shown.receipt.inferenceSource)}</dd>
+                  <dd>
+                    {receiptRoute(shown.receipt)}
+                    {shown.receipt.secondOpinion?.decision && (
+                      <span className="quiet"> (Gemini Nano: allow; cloud: {decisionLabel[shown.receipt.secondOpinion.decision].toLowerCase()})</span>
+                    )}
+                  </dd>
                   <dt>Outcome</dt>
                   <dd>{shown.outcome[0].toUpperCase() + shown.outcome.slice(1)}</dd>
                   <dt>Receipt</dt>

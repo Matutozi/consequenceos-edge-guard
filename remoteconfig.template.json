@@ -9,7 +9,7 @@
     },
     "guard_policy": {
       "defaultValue": {
-        "value": "{\"blockAtRisk\":\"critical\",\"approvalAtRisk\":\"high\",\"irreversibleAllowedUpTo\":\"low\",\"approvalForData\":[\"confidential\",\"restricted\"],\"approvalForImpact\":[\"organization\",\"public\"],\"fastPathReads\":true,\"fastPathLowImpact\":true,\"wildcardTargets\":[\"all\",\"*\",\"everyone\",\"everybody\",\"all users\",\"every user\",\"any\"],\"assessorTimeoutSeconds\":20}"
+        "value": "{\"blockAtRisk\":\"critical\",\"approvalAtRisk\":\"high\",\"irreversibleAllowedUpTo\":\"low\",\"approvalForData\":[\"confidential\",\"restricted\"],\"approvalForImpact\":[\"organization\",\"public\"],\"fastPathReads\":true,\"fastPathLowImpact\":true,\"wildcardTargets\":[\"all\",\"*\",\"everyone\",\"everybody\",\"all users\",\"every user\",\"any\"],\"assessorTimeoutSeconds\":20,\"secondOpinionForDeviceAllows\":true}"
       },
       "description": "Edge Guard's adjustable thresholds. A malformed field takes its strictest value. The floor (hard rules, unknown tools, egress, fail closed) is not configurable.",
       "valueType": "JSON"

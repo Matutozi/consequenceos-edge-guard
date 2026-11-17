@@ -57,7 +57,7 @@ export default function EvalsPage() {
       if (route !== "rules") {
         saveLastRun({
           route,
-          model: route === "cloud" ? PLANNER_MODEL : "Gemini Nano",
+          model: route === "cloud" ? PLANNER_MODEL : route === "hybrid" ? `Gemini Nano, then ${PLANNER_MODEL}` : "Gemini Nano",
           date,
           assessments: assessmentsFrom(collected),
         });
@@ -69,7 +69,7 @@ export default function EvalsPage() {
     const ordered = [...results].sort((a, b) => a.case.id.localeCompare(b.case.id));
     const text = toMarkdown(ordered, route, {
       date: finishedAt ?? new Date().toISOString().slice(0, 10),
-      model: route === "cloud" ? PLANNER_MODEL : route === "device" ? "Gemini Nano" : undefined,
+      model: route === "cloud" ? PLANNER_MODEL : route === "device" ? "Gemini Nano" : route === "hybrid" ? `Gemini Nano, then ${PLANNER_MODEL}` : undefined,
     });
     try {
       await navigator.clipboard.writeText(text);
@@ -99,8 +99,11 @@ export default function EvalsPage() {
         <div className="card-body">
           <div className="presets" role="radiogroup" aria-label="Route">
             <div className="segmented">
+              <button type="button" role="radio" aria-checked={route === "hybrid"} disabled={running || !deviceReady} onClick={() => setRoute("hybrid")}>
+                Hybrid
+              </button>
               <button type="button" role="radio" aria-checked={route === "device"} disabled={running || !deviceReady} onClick={() => setRoute("device")}>
-                On device
+                On device only
               </button>
               <button type="button" role="radio" aria-checked={route === "cloud"} disabled={running} onClick={() => setRoute("cloud")}>
                 Cloud
@@ -126,7 +129,9 @@ export default function EvalsPage() {
             {route === "cloud"
               ? `Every judgement case is assessed by ${PLANNER_MODEL} through Firebase AI Logic, including confidential ones. The product never sends sensitive data to the cloud; the evals do, and the data is synthetic. Cases run one at a time.`
               : route === "device"
-                ? "Every judgement case is assessed by Gemini Nano on this device."
+                ? "Every judgement case is assessed by Gemini Nano alone, with no second opinion. This measures the on-device model by itself."
+                : route === "hybrid"
+                  ? "The product's behaviour with Gemini Nano ready: Nano assesses on this device and can escalate or block alone; before any allow on public or internal data, the cloud gives a second opinion and the stricter answer wins."
                 : "Only the cases decided by rules. No model is called; these must pass every time."}
           </p>
           {!deviceReady && <DeviceModelPanel model={deviceModel} disabled={running} />}

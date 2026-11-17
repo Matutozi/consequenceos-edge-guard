@@ -7,7 +7,7 @@ import { PLANNER_MODEL } from "../../ops/planner";
 import type { LoadedRegistry } from "../../ops/registryConfig";
 import { useDeviceModel } from "../../useDeviceModel";
 import { canonicalJson } from "../../domain/receipt";
-import { decisionBadge, decisionLabel, formatArgs, routeLine, truncate } from "../format";
+import { decisionBadge, decisionLabel, formatArgs, receiptRoute, truncate, wentToCloud } from "../format";
 import { deleteManualTicket } from "../../intake/adapters/manual";
 import { sourceLabel, type Ticket } from "../../intake";
 import { useTicketQueue } from "../../intake/useTicketQueue";
@@ -114,7 +114,7 @@ export default function ConsoleView() {
       ? [ticket.body.split(INJECTED_INSTRUCTION)[0].replace(/\n*--- forwarded message ---\n*$/, ""), INJECTED_INSTRUCTION]
       : [ticket?.body ?? "", undefined];
   const recordedUnavailable = mode === "recorded" && ticketId !== RECORDED_TICKET_ID;
-  const cloudChecks = steps.filter((s) => s.signed?.receipt.inferenceSource === "IN_CLOUD").length;
+  const cloudChecks = steps.filter((s) => s.signed && wentToCloud(s.signed.receipt)).length;
 
   return (
     <div className="console">
@@ -232,8 +232,9 @@ export default function ConsoleView() {
           </ol>
           {cloudChecks > 0 && (
             <p className="quiet">
-              {cloudChecks} {cloudChecks === 1 ? "check" : "checks"} ran in the cloud because Gemini Nano was not ready.
-              Each sent only the tool name, arguments, the agent's reason and the registry description.
+              {cloudChecks} {cloudChecks === 1 ? "check" : "checks"} went to the cloud: either Gemini Nano was not ready, or
+              it would allow the call and the cloud gave a second opinion. Each sent only the tool name, arguments, the
+              agent's reason and the registry description. Sensitive data never goes.
             </p>
           )}
         </section>
@@ -298,7 +299,7 @@ function StepRow({ step, index, selected, onSelect }: { step: StepState; index: 
         )}
       </span>
       <span className="line">
-        {[receipt && routeLine(receipt.inferenceSource, step.ms), truncate(outcome, 120)].filter(Boolean).join(". ")}
+        {[receipt && receiptRoute(receipt, step.ms), truncate(outcome, 120)].filter(Boolean).join(". ")}
       </span>
     </button>
   );

@@ -49,12 +49,21 @@ describe("checkLoggedReceipt", () => {
     expect(allPassed(checks)).toBe(false);
   });
 
+  it("shows no passing check at all on a tampered receipt", async () => {
+    const { doc, run } = await logged("require_approval", "executed", true);
+    doc.receipt.decision.decision = "allow";
+    const checks = await checkLoggedReceipt(doc, run);
+    expect(checks.filter((c) => c.status === "pass").map((c) => c.id)).toEqual([]);
+    expect(status(checks, "binding")).toBe("not-applicable");
+    expect(status(checks, "outcome")).toBe("not-applicable");
+  });
+
   it("does not count an approval for a receipt whose contents changed", async () => {
     const { doc, run } = await logged("require_approval", "executed", true);
     doc.receipt.toolCall.args.userId = "everyone";
     const checks = await checkLoggedReceipt(doc, run);
     expect(status(checks, "approval")).toBe("fail");
-    expect(status(checks, "outcome")).toBe("fail");
+    expect(status(checks, "outcome")).toBe("not-applicable");
   });
 
   it("detects a digest recomputed by a forger, through the signature", async () => {

@@ -39,10 +39,24 @@ export interface AnalysisResult {
   inferenceSource: InferenceSource;
 }
 
+/**
+ * The cloud's second opinion on a call Gemini Nano would allow. Nano can escalate or
+ * block on its own; an allow needs the cloud to agree, and the stricter answer wins.
+ */
+export interface SecondOpinion {
+  /** agreed: the cloud also allows. stricter: the cloud asked for more. unavailable:
+   *  the cloud did not answer. not-sent: the data may not leave the device. */
+  status: "agreed" | "stricter" | "unavailable" | "not-sent";
+  decision?: PolicyDecision;
+  assessment?: RiskAssessment;
+  inferenceSource?: InferenceSource;
+}
+
 /** What a receipt records about analysis; `assessment` is null when no model ran. */
 export interface ReceiptAnalysis {
   assessment: RiskAssessment | null;
   inferenceSource: InferenceSource;
+  secondOpinion?: SecondOpinion;
 }
 
 /** The exact call an agent asked to run. A receipt authorizes this call and no other. */
@@ -59,6 +73,7 @@ export interface DecisionReceipt {
   assessment: RiskAssessment | null;
   decision: GuardDecision;
   inferenceSource: InferenceSource;
+  secondOpinion?: SecondOpinion;
   toolCall?: ToolCallRecord;
   digest: string;
 }

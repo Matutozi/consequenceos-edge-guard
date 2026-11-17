@@ -4,7 +4,7 @@ import { APPROVER, type StepState } from "../../agent/useAgentRun";
 import { canonicalJson } from "../../domain/receipt";
 import { lookupTool } from "../../ops/registry";
 import type { LoadedRegistry } from "../../ops/registryConfig";
-import { decisionBadge, decisionLabel, routeLine, truncate } from "../format";
+import { decisionBadge, decisionLabel, receiptRoute, truncate } from "../format";
 
 interface Props {
   step?: StepState;
@@ -98,6 +98,18 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
         </section>
       )}
 
+      {receipt?.secondOpinion?.decision && (
+        <section>
+          <h3>Two opinions</h3>
+          <p>
+            Gemini Nano: <span className={decisionBadge.allow}>{decisionLabel.allow}</span>{" "}
+            Cloud: <span className={decisionBadge[receipt.secondOpinion.decision]}>{decisionLabel[receipt.secondOpinion.decision]}</span>
+          </p>
+          {receipt.secondOpinion.assessment && <p className="quiet">Cloud: {receipt.secondOpinion.assessment.summary}</p>}
+          <p className="quiet">The stricter answer decides.</p>
+        </section>
+      )}
+
       {receipt?.assessment && (
         <section>
           <h3>Assessor</h3>
@@ -111,9 +123,11 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
       {receipt && (
         <section>
           <h3>Route</h3>
-          <p>{routeLine(receipt.inferenceSource, step.ms)}</p>
+          <p>{receiptRoute(receipt, step.ms)}</p>
           <p className="quiet">
-            {receipt.inferenceSource === "IN_CLOUD"
+            {receipt.secondOpinion
+              ? secondOpinionText[receipt.secondOpinion.status]
+              : receipt.inferenceSource === "IN_CLOUD"
               ? "Sent to Firebase AI Logic: the tool name, its arguments, the agent's reason and the registry description. Nothing else from the ticket."
               : receipt.inferenceSource === "ON_DEVICE"
                 ? "Assessed by Gemini Nano. Nothing left this device."
@@ -207,3 +221,14 @@ function PhoneStatus({ phone }: { phone: NonNullable<StepState["phone"]> }) {
   }[phone.status];
   return <p className={phone.status === "failed" || phone.status === "ignored" ? "text-deny" : "quiet"}>{text}</p>;
 }
+
+const secondOpinionText = {
+  agreed:
+    "Gemini Nano would allow it, so the cloud was asked for a second opinion and agreed. Sent to Firebase AI Logic: the tool name, its arguments, the agent's reason and the registry description.",
+  stricter:
+    "Gemini Nano would allow it, so the cloud was asked for a second opinion and asked for more; the stricter answer won. Sent to Firebase AI Logic: the tool name, its arguments, the agent's reason and the registry description.",
+  unavailable:
+    "Gemini Nano would allow it, but the cloud second opinion did not answer, so a person decides.",
+  "not-sent":
+    "Gemini Nano would allow it, but this data may not leave the device for a second opinion, so a person decides. Nothing left this device.",
+} as const;

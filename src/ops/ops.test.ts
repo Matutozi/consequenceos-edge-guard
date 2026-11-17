@@ -32,7 +32,9 @@ beforeEach(() => {
       blastRadius: "single_user",
       recommendedControl: "allow",
     },
-    inferenceSource: "ON_DEVICE",
+    // Answer as the cloud does, so these rule-layer tests see one assessor call; the
+    // second opinion for on-device allows has its own tests in src/domain/guard.test.ts.
+    inferenceSource: "IN_CLOUD",
   });
 });
 

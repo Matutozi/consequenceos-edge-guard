@@ -1,10 +1,15 @@
+import { DEFAULT_POLICY } from "../domain/policyConfig";
 import type { InferenceSource, PolicyDecision, RiskAssessment } from "../domain/types";
 import type { Signer } from "../ops/signing";
 import { guardToolCall } from "../ops/toolGuard";
 import { evalRegistry, type Category, type EvalCase } from "./cases";
 
-/** "rules" runs only the cases decided without a model. */
-export type EvalRoute = "rules" | "device" | "cloud";
+/**
+ * "rules": only the cases decided without a model. "device": Gemini Nano alone.
+ * "cloud": the cloud model alone. "hybrid": the product's behaviour with Nano ready:
+ * Nano first, and a cloud second opinion before any allow.
+ */
+export type EvalRoute = "rules" | "device" | "cloud" | "hybrid";
 
 export type Verdict = "pass" | "stricter" | "false-allow" | "not-assessed" | "error";
 
@@ -18,6 +23,8 @@ export interface EvalResult {
   reason?: string;
   /** The model's assessment, kept so a policy draft can be re-scored without new calls. */
   assessment?: RiskAssessment | null;
+  /** For the hybrid route: whether the cloud was asked, and what it said. */
+  secondOpinion?: "agreed" | "stricter" | "unavailable" | "not-sent";
   error?: string;
 }
 
@@ -30,6 +37,7 @@ export function score(expected: PolicyDecision, actual: PolicyDecision): "pass" 
 
 const expectedSource: Record<Exclude<EvalRoute, "rules">, InferenceSource> = {
   device: "ON_DEVICE",
+  hybrid: "ON_DEVICE",
   cloud: "IN_CLOUD",
 };
 
@@ -38,7 +46,13 @@ export async function runCase(evalCase: EvalCase, route: EvalRoute, signer: Sign
   try {
     const { receipt } = await guardToolCall(
       { agent: "eval-agent", tool: evalCase.tool, args: evalCase.args, reason: evalCase.reason },
-      { registry: evalRegistry, signer, route: route === "rules" ? "auto" : route },
+      {
+        registry: evalRegistry,
+        signer,
+        route: route === "rules" ? "auto" : route === "hybrid" ? "device" : route,
+        // "device" measures Nano alone; "hybrid" keeps the second opinion the product uses.
+        policy: { ...DEFAULT_POLICY, secondOpinionForDeviceAllows: route !== "device" },
+      },
     );
     const ms = Math.round(performance.now() - started);
     const actual = receipt.decision.decision;
@@ -49,6 +63,7 @@ export async function runCase(evalCase: EvalCase, route: EvalRoute, signer: Sign
       ms,
       reason: receipt.decision.rationale[0],
       assessment: receipt.assessment,
+      secondOpinion: receipt.secondOpinion?.status,
     };
     // A judgement case that never reached the intended model was not assessed: a
     // fail-closed escalation must not count as a correct answer.
@@ -151,6 +166,13 @@ export function toMarkdown(results: EvalResult[], route: EvalRoute, meta: { date
   );
   return [
     `Route: **${route}**${meta.model ? `, model ${meta.model}` : ""}, run ${meta.date}.`,
+    ...(route === "hybrid"
+      ? [
+          "",
+          `Cloud second opinions asked: ${results.filter((r) => r.secondOpinion && r.secondOpinion !== "not-sent").length} of ${results.filter((r) => !r.case.byRule).length} judgement cases ` +
+            `(${results.filter((r) => r.secondOpinion === "stricter").length} stricter than Gemini Nano, ${results.filter((r) => r.secondOpinion === "unavailable").length} unavailable).`,
+        ]
+      : []),
     "",
     "| Group | Scored | Exact match | False allows | Stricter than expected | Not assessed or errors |",
     "|---|---|---|---|---|---|",

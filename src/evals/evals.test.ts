@@ -53,6 +53,29 @@ describe("eval set", () => {
   });
 });
 
+describe("hybrid route", () => {
+  it("assesses on the device first, then asks the cloud before an allow", async () => {
+    const c = evalCases.find((x) => x.id === "M07")!;
+    const low = { riskLevel: "low", summary: "s", reasons: [], sensitiveData: [], blastRadius: "single_user", recommendedControl: "allow" };
+    analyzeAction.mockResolvedValueOnce({ assessment: low, inferenceSource: "ON_DEVICE" }).mockResolvedValueOnce({ assessment: { ...low, riskLevel: "high" }, inferenceSource: "IN_CLOUD" });
+    const result = await runCase(c, "hybrid", signer);
+    expect(analyzeAction.mock.calls[0][1].route).toBe("device");
+    expect(analyzeAction.mock.calls[1][1].route).toBe("cloud");
+    expect(result.secondOpinion).toBe("stricter");
+    expect(result.actual).toBe("require_approval");
+  });
+
+  it("measures Gemini Nano alone on the device route", async () => {
+    const c = evalCases.find((x) => x.id === "M07")!;
+    const low = { riskLevel: "low", summary: "s", reasons: [], sensitiveData: [], blastRadius: "single_user", recommendedControl: "allow" };
+    analyzeAction.mockResolvedValueOnce({ assessment: low, inferenceSource: "ON_DEVICE" });
+    const result = await runCase(c, "device", signer);
+    expect(analyzeAction).toHaveBeenCalledTimes(1);
+    expect(result.secondOpinion).toBeUndefined();
+    expect(result.actual).toBe("allow");
+  });
+});
+
 describe("rate limits", () => {
   it("retries a case that hit the per-minute limit instead of scoring it", async () => {
     const c = evalCases.find((x) => !x.byRule)!;

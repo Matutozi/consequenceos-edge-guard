@@ -5,7 +5,7 @@ import { DeviceModelPanel } from "./DeviceModelPanel";
 import { useDeviceModel } from "./useDeviceModel";
 import { guardAction } from "./domain/guard";
 import type { ActionProposal, DecisionReceipt } from "./domain/types";
-import { decisionBadge, decisionLabel, duration, routeLine } from "./ui/format";
+import { decisionBadge, decisionLabel, duration, receiptRoute } from "./ui/format";
 
 const presets: [string, ActionProposal][] = [
   [
@@ -198,7 +198,7 @@ export default function ActionInspector() {
             <div className="card-body">
               <div className="decision-head">
                 <span className={decisionBadge[receipt.decision.decision]}>{decisionLabel[receipt.decision.decision]}</span>
-                <span className="quiet">{routeLine(receipt.inferenceSource, elapsed)}</span>
+                <span className="quiet">{receiptRoute(receipt, elapsed)}</span>
               </div>
               <div>
                 <h3 className="quiet" style={{ margin: "0 0 4px" }}>Reason</h3>
