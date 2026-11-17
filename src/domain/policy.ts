@@ -12,9 +12,17 @@ export function evaluatePolicy(
     return { decision: "deny", rationale };
   }
 
-  if (assessment.riskLevel === "critical" || assessment.recommendedControl === "block") {
-    rationale.push("Critical risk or an explicit block recommendation was detected.");
+  if (assessment.riskLevel === "critical") {
+    rationale.push("The risk assessor rated this action critical.");
     return { decision: "deny", rationale };
+  }
+
+  // A block recommendation without critical risk is self-contradictory model output.
+  // It never allows the action; it escalates to a human instead of auto-denying.
+  if (assessment.recommendedControl === "block") {
+    rationale.push(
+      `The risk assessor recommended blocking but rated the risk ${assessment.riskLevel}; a human must decide.`,
+    );
   }
 
   if (["medium", "high"].includes(assessment.riskLevel)) {

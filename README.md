@@ -23,7 +23,7 @@ properties into one of three controls:
 
 - `allow` — routine, reversible, low-impact work proceeds.
 - `require_approval` — consequential work pauses for a human decision.
-- `deny` — critical or explicitly blocked work cannot proceed.
+- `deny` — critical work, or work matching a hard policy rule, cannot proceed.
 
 Some rules depend only on the declared properties, never on model output. For
 example, an irreversible action on restricted data is always denied, whatever risk

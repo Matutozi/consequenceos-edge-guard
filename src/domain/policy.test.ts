@@ -55,6 +55,32 @@ describe("evaluatePolicy", () => {
     ).toBe("require_approval");
   });
 
+  it("escalates, not denies, a block recommendation with high risk", () => {
+    const result = evaluatePolicy(proposal, {
+      ...assessment,
+      riskLevel: "high",
+      recommendedControl: "block",
+    });
+    expect(result.decision).toBe("require_approval");
+    expect(result.rationale.join(" ")).toMatch(/recommended blocking/);
+  });
+
+  it("never allows a low-risk action the model recommends blocking", () => {
+    expect(
+      evaluatePolicy(proposal, { ...assessment, recommendedControl: "block" }).decision,
+    ).toBe("require_approval");
+  });
+
+  it("denies a critical action even when the model recommends allow", () => {
+    expect(
+      evaluatePolicy(proposal, {
+        ...assessment,
+        riskLevel: "critical",
+        recommendedControl: "allow",
+      }).decision,
+    ).toBe("deny");
+  });
+
   it("denies a critical action", () => {
     expect(
       evaluatePolicy(proposal, { ...assessment, riskLevel: "critical" }).decision,
