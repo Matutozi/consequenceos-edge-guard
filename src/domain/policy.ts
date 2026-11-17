@@ -1,16 +1,39 @@
 import type { ActionProposal, GuardDecision, RiskAssessment } from "./types";
 
+/**
+ * Rules on declared properties only. They run before any model call, so model output
+ * cannot downgrade them and they work with no model available at all.
+ */
+export function evaluateHardRules(proposal: ActionProposal): GuardDecision | undefined {
+  if (!proposal.reversible && proposal.dataSensitivity === "restricted") {
+    return {
+      decision: "deny",
+      rationale: ["Irreversible actions on restricted data are blocked by policy."],
+    };
+  }
+  return undefined;
+}
+
+/** The fail-closed decision when a sensitive action could not be assessed. */
+export function escalateUnassessed(proposal: ActionProposal): GuardDecision {
+  return {
+    decision: "require_approval",
+    rationale: [
+      `Gemini Nano is not ready on this device and cloud analysis is not permitted ` +
+        `for ${proposal.dataSensitivity} data, so nothing left the device.`,
+      "An action on sensitive data that could not be assessed requires accountable human approval.",
+    ],
+  };
+}
+
 export function evaluatePolicy(
   proposal: ActionProposal,
   assessment: RiskAssessment,
 ): GuardDecision {
-  const rationale: string[] = [];
+  const hardDecision = evaluateHardRules(proposal);
+  if (hardDecision) return hardDecision;
 
-  // Hard rule on declared properties only, so model output cannot downgrade it.
-  if (!proposal.reversible && proposal.dataSensitivity === "restricted") {
-    rationale.push("Irreversible actions on restricted data are blocked by policy.");
-    return { decision: "deny", rationale };
-  }
+  const rationale: string[] = [];
 
   if (assessment.riskLevel === "critical") {
     rationale.push("The risk assessor rated this action critical.");

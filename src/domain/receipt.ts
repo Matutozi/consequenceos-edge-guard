@@ -1,8 +1,8 @@
 import type {
   ActionProposal,
-  AnalysisResult,
   DecisionReceipt,
   GuardDecision,
+  ReceiptAnalysis,
 } from "./types";
 
 export const RECEIPT_DIGEST_ALGORITHM = "sha256-canonical-json-v1";
@@ -40,7 +40,7 @@ async function digestBody(body: ReceiptBody): Promise<string> {
 
 export async function createDecisionReceipt(
   proposal: ActionProposal,
-  analysis: AnalysisResult,
+  analysis: ReceiptAnalysis,
   decision: GuardDecision,
 ): Promise<DecisionReceipt> {
   const body: ReceiptBody = {

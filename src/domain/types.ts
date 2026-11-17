@@ -28,10 +28,17 @@ export interface GuardDecision {
   rationale: string[];
 }
 
-export type InferenceSource = "ON_DEVICE" | "IN_CLOUD" | "UNKNOWN";
+/** `NONE`: no model was called; the decision came from deterministic policy alone. */
+export type InferenceSource = "ON_DEVICE" | "IN_CLOUD" | "UNKNOWN" | "NONE";
 
 export interface AnalysisResult {
   assessment: RiskAssessment;
+  inferenceSource: InferenceSource;
+}
+
+/** What a receipt records about analysis; `assessment` is null when no model ran. */
+export interface ReceiptAnalysis {
+  assessment: RiskAssessment | null;
   inferenceSource: InferenceSource;
 }
 
@@ -40,7 +47,7 @@ export interface DecisionReceipt {
   createdAt: string;
   digestAlgorithm: string;
   proposal: ActionProposal;
-  assessment: RiskAssessment;
+  assessment: RiskAssessment | null;
   decision: GuardDecision;
   inferenceSource: InferenceSource;
   digest: string;

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   Check,
@@ -13,9 +13,13 @@ import {
   Sparkles,
   TriangleAlert,
 } from "lucide-react";
-import { analyzeAction, isSensitive } from "./ai/analyzeAction";
-import { evaluatePolicy } from "./domain/policy";
-import { createDecisionReceipt } from "./domain/receipt";
+import {
+  getDeviceModelStatus,
+  isSensitive,
+  prepareDeviceModel,
+  type DeviceModelStatus,
+} from "./ai/analyzeAction";
+import { guardAction } from "./domain/guard";
 import type {
   ActionProposal,
   DecisionReceipt,
@@ -74,6 +78,71 @@ function downloadReceipt(receipt: DecisionReceipt) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+interface DeviceModelPanelProps {
+  status?: DeviceModelStatus;
+  preparing: boolean;
+  progress: number;
+  error: string;
+  disabled: boolean;
+  onPrepare: () => void;
+}
+
+function DeviceModelPanel({
+  status,
+  preparing,
+  progress,
+  error,
+  disabled,
+  onPrepare,
+}: DeviceModelPanelProps) {
+  const noLocalModel = status === "unsupported" || status === "unavailable";
+  const canPrepare = status === "downloadable" || status === "downloading";
+
+  let title: string;
+  let detail: string;
+  if (preparing) {
+    title = `Downloading Gemini Nano · ${Math.round(progress * 100)}%`;
+    detail = "Chrome downloads the model once. Public and internal actions can use the cloud meanwhile.";
+  } else if (status === undefined) {
+    title = "Checking on-device model…";
+    detail = "Looking for Gemini Nano in this browser.";
+  } else if (status === "available") {
+    title = "Gemini Nano ready";
+    detail = "Actions are assessed privately on this device first.";
+  } else if (canPrepare) {
+    title = status === "downloading" ? "Gemini Nano is downloading" : "Gemini Nano not downloaded";
+    detail = "Download it once to assess actions on this device. Until then, public and internal actions use the cloud.";
+  } else {
+    title = status === "unsupported"
+      ? "No on-device model in this browser"
+      : "Gemini Nano can't run on this device";
+    detail = "Public and internal actions use Firebase AI Logic in the cloud. Sensitive actions never leave the device: they go to a human.";
+  }
+
+  return (
+    <div className={`model-panel ${status === "available" ? "ready" : ""}`} aria-live="polite">
+      <span className="model-icon">
+        {preparing ? <LoaderCircle className="spin" size={16} /> : noLocalModel ? <Cloud size={16} /> : <Cpu size={16} />}
+      </span>
+      <span className="model-text">
+        <strong>{title}</strong>
+        <small>{detail}</small>
+        {preparing && (
+          <span className="model-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}>
+            <span style={{ width: `${Math.round(progress * 100)}%` }} />
+          </span>
+        )}
+        {error && <small className="model-error" role="alert">{error}</small>}
+      </span>
+      {canPrepare && !preparing && (
+        <button type="button" disabled={disabled} onClick={onPrepare}>
+          <Download size={14} /> {status === "downloading" ? "Track" : "Download"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [proposal, setProposal] = useState<ActionProposal>(initialProposal);
   const [receipt, setReceipt] = useState<DecisionReceipt>();
@@ -81,15 +150,48 @@ export default function App() {
   const [error, setError] = useState("");
   const [downloadProgress, setDownloadProgress] = useState<number>();
   const [allowCloudForSensitive, setAllowCloudForSensitive] = useState(false);
+  const [modelStatus, setModelStatus] = useState<DeviceModelStatus>();
+  const [preparing, setPreparing] = useState(false);
+  const [prepareProgress, setPrepareProgress] = useState(0);
+  const [prepareError, setPrepareError] = useState("");
   const sensitive = isSensitive(proposal);
+
+  const refreshModelStatus = useCallback(async () => {
+    setModelStatus(await getDeviceModelStatus());
+  }, []);
+
+  useEffect(() => {
+    void refreshModelStatus();
+  }, [refreshModelStatus]);
+
+  async function handlePrepareModel() {
+    setPreparing(true);
+    setPrepareError("");
+    setPrepareProgress(0);
+    try {
+      await prepareDeviceModel(setPrepareProgress);
+    } catch (caught) {
+      setPrepareError(
+        caught instanceof Error ? caught.message : "The on-device model could not be prepared.",
+      );
+    } finally {
+      setPreparing(false);
+      await refreshModelStatus();
+    }
+  }
 
   const sourceLabel = useMemo(() => {
     if (!receipt) return "Awaiting analysis";
-    return receipt.inferenceSource === "ON_DEVICE"
-      ? "Gemini Nano · on device"
-      : receipt.inferenceSource === "IN_CLOUD"
-        ? "Firebase AI Logic · cloud fallback"
-        : "Firebase AI Logic · source unavailable";
+    switch (receipt.inferenceSource) {
+      case "ON_DEVICE":
+        return "Gemini Nano · on device";
+      case "IN_CLOUD":
+        return "Firebase AI Logic · cloud fallback";
+      case "NONE":
+        return "Policy only · no model call";
+      default:
+        return "Firebase AI Logic · source unavailable";
+    }
   }, [receipt]);
 
   function clearResult() {
@@ -115,16 +217,18 @@ export default function App() {
     setDownloadProgress(0);
 
     try {
-      const analysis = await analyzeAction(proposal, {
-        onDownloadProgress: setDownloadProgress,
-        allowCloudForSensitive,
-      });
-      const decision = evaluatePolicy(proposal, analysis.assessment);
-      setReceipt(await createDecisionReceipt(proposal, analysis, decision));
+      setReceipt(
+        await guardAction(proposal, {
+          onDownloadProgress: setDownloadProgress,
+          allowCloudForSensitive,
+        }),
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The risk analysis failed.");
     } finally {
       setLoading(false);
+      // Evaluating can start or finish a model download.
+      void refreshModelStatus();
     }
   }
 
@@ -248,8 +352,8 @@ export default function App() {
                   <strong>Allow cloud analysis</strong>
                   <small>
                     Off: {proposal.dataSensitivity} proposals are analyzed only on this
-                    device. On: they may be sent to Firebase AI Logic if Gemini Nano is
-                    unavailable.
+                    device; without Gemini Nano they go to a human unanalyzed. On: they
+                    may be sent to Firebase AI Logic if Gemini Nano is unavailable.
                   </small>
                 </span>
                 <input
@@ -263,7 +367,16 @@ export default function App() {
               </label>
             )}
 
-            <button className="analyze-button" disabled={loading} type="submit">
+            <DeviceModelPanel
+              status={modelStatus}
+              preparing={preparing}
+              progress={prepareProgress}
+              error={prepareError}
+              disabled={loading}
+              onPrepare={handlePrepareModel}
+            />
+
+            <button className="analyze-button" disabled={loading || preparing} type="submit">
               {loading ? <LoaderCircle className="spin" size={18} /> : <ShieldCheck size={18} />}
               {loading ? "Evaluating consequence…" : "Evaluate before execution"}
               {!loading && <ArrowRight size={18} />}
@@ -284,7 +397,13 @@ export default function App() {
                 <h2>Execution decision</h2>
               </div>
               <span className="source-badge">
-                {receipt?.inferenceSource === "ON_DEVICE" ? <Cpu size={14} /> : <Cloud size={14} />}
+                {receipt?.inferenceSource === "ON_DEVICE" ? (
+                  <Cpu size={14} />
+                ) : receipt?.inferenceSource === "NONE" ? (
+                  <LockKeyhole size={14} />
+                ) : (
+                  <Cloud size={14} />
+                )}
                 {sourceLabel}
               </span>
             </div>
@@ -305,15 +424,33 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="risk-heading">
-                  <div>
-                    <small>ASSESSED RISK</small>
-                    <strong>{receipt.assessment.riskLevel}</strong>
-                  </div>
-                  <span>{receipt.assessment.blastRadius.replace("_", " ")} impact</span>
-                </div>
-
-                <p className="summary">{receipt.assessment.summary}</p>
+                {receipt.assessment ? (
+                  <>
+                    <div className="risk-heading">
+                      <div>
+                        <small>ASSESSED RISK</small>
+                        <strong>{receipt.assessment.riskLevel}</strong>
+                      </div>
+                      <span>{receipt.assessment.blastRadius.replace("_", " ")} impact</span>
+                    </div>
+                    <p className="summary">{receipt.assessment.summary}</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="risk-heading">
+                      <div>
+                        <small>ASSESSED RISK</small>
+                        <strong>Not assessed</strong>
+                      </div>
+                      <span>no model call</span>
+                    </div>
+                    <p className="summary">
+                      {receipt.decision.decision === "deny"
+                        ? "A hard policy rule decided this before any model was asked. It works the same in every browser, online or offline."
+                        : "Edge Guard could not assess this action without sending sensitive data off the device, so it failed closed to human approval."}
+                    </p>
+                  </>
+                )}
 
                 <div className="evidence">
                   <h4>Why this decision</h4>
@@ -321,7 +458,7 @@ export default function App() {
                     {receipt.decision.rationale.map((item, index) => (
                       <li key={`policy-${index}`}>{item}</li>
                     ))}
-                    {receipt.assessment.reasons.slice(0, 3).map((item, index) => (
+                    {(receipt.assessment?.reasons ?? []).slice(0, 3).map((item, index) => (
                       <li key={`model-${index}`}>{item}</li>
                     ))}
                   </ul>

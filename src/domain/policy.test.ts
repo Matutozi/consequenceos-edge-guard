@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePolicy } from "./policy";
+import { evaluateHardRules, evaluatePolicy } from "./policy";
 import type { ActionProposal, RiskAssessment } from "./types";
 
 const proposal: ActionProposal = {
@@ -78,6 +78,14 @@ describe("evaluatePolicy", () => {
         riskLevel: "critical",
         recommendedControl: "allow",
       }).decision,
+    ).toBe("deny");
+  });
+
+  it("hard rules decide only on declared properties", () => {
+    expect(evaluateHardRules(proposal)).toBeUndefined();
+    expect(
+      evaluateHardRules({ ...proposal, reversible: false, dataSensitivity: "restricted" })
+        ?.decision,
     ).toBe("deny");
   });
 

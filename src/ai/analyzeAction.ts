@@ -99,29 +99,50 @@ function hasOnDeviceApi(): boolean {
   return typeof (globalThis as { LanguageModel?: unknown }).LanguageModel !== "undefined";
 }
 
-function onDeviceUnavailableError(proposal: ActionProposal, cause?: unknown): Error {
-  return new Error(
-    `Gemini Nano is not available on this device, so this ${proposal.dataSensitivity} ` +
-      "proposal was not analyzed and nothing was sent to the cloud. Enable the on-device " +
-      "model or explicitly allow cloud analysis for sensitive data.",
-    { cause },
-  );
+/** Thrown when a proposal must stay on device but the on-device model cannot run. */
+export class OnDeviceUnavailableError extends Error {
+  constructor(proposal: ActionProposal, cause?: unknown) {
+    super(
+      `Gemini Nano is not ready on this device, so this ${proposal.dataSensitivity} ` +
+        "proposal was not analyzed and nothing was sent to the cloud.",
+      { cause },
+    );
+    this.name = "OnDeviceUnavailableError";
+  }
 }
 
-export async function analyzeAction(
-  proposal: ActionProposal,
-  { onDownloadProgress, allowCloudForSensitive = false }: AnalyzeOptions = {},
-): Promise<AnalysisResult> {
-  const onDeviceOnly = isSensitive(proposal) && !allowCloudForSensitive;
+const languageOptions = {
+  expectedInputs: [{ type: "text" as const, languages: ["en"] }],
+  expectedOutputs: [{ type: "text" as const, languages: ["en"] }],
+};
 
-  // Must run before any Firebase call: see hasOnDeviceApi.
-  if (onDeviceOnly && !hasOnDeviceApi()) {
-    throw onDeviceUnavailableError(proposal);
+/** `unsupported`: this browser has no Prompt API at all. Others mirror Chrome's values. */
+export type DeviceModelStatus =
+  | "unsupported"
+  | "unavailable"
+  | "downloadable"
+  | "downloading"
+  | "available";
+
+export async function getDeviceModelStatus(): Promise<DeviceModelStatus> {
+  if (!hasOnDeviceApi()) return "unsupported";
+  const api = (globalThis as {
+    LanguageModel?: { availability(options: unknown): Promise<string> };
+  }).LanguageModel;
+  try {
+    const status = await api!.availability(languageOptions);
+    return ["downloadable", "downloading", "available"].includes(status)
+      ? (status as DeviceModelStatus)
+      : "unavailable";
+  } catch {
+    return "unavailable";
   }
+}
 
+function createGuardModel(mode: InferenceMode) {
   const ai = getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });
-  const model = getGenerativeModel(ai, {
-    mode: onDeviceOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
+  return getGenerativeModel(ai, {
+    mode,
     inCloudParams: {
       model: "gemini-3.5-flash-lite",
       systemInstruction,
@@ -133,8 +154,7 @@ export async function analyzeAction(
     },
     onDeviceParams: {
       createOptions: {
-        expectedInputs: [{ type: "text", languages: ["en"] }],
-        expectedOutputs: [{ type: "text", languages: ["en"] }],
+        ...languageOptions,
         initialPrompts: [
           { role: "system", content: [{ type: "text", value: systemInstruction }] },
         ],
@@ -142,6 +162,39 @@ export async function analyzeAction(
       promptOptions: { responseConstraint: assessmentSchema },
     },
   });
+}
+
+/**
+ * Downloads Gemini Nano if needed and resolves once it is ready. Chrome requires a
+ * user gesture to start a download, so call this from a click handler.
+ */
+export async function prepareDeviceModel(
+  onDownloadProgress?: (progress: number) => void,
+): Promise<void> {
+  if (!hasOnDeviceApi()) {
+    throw new Error("This browser does not provide an on-device model.");
+  }
+  await createGuardModel(InferenceMode.ONLY_ON_DEVICE).initializeDeviceModel(
+    onDownloadProgress,
+  );
+}
+
+export async function analyzeAction(
+  proposal: ActionProposal,
+  { onDownloadProgress, allowCloudForSensitive = false }: AnalyzeOptions = {},
+): Promise<AnalysisResult> {
+  const onDeviceOnly = isSensitive(proposal) && !allowCloudForSensitive;
+
+  // Must run before any Firebase call: see hasOnDeviceApi. A model that still needs
+  // downloading counts as unavailable too: the download is the user's explicit choice
+  // (prepareDeviceModel), not something an evaluation should block on for minutes.
+  if (onDeviceOnly && (await getDeviceModelStatus()) !== "available") {
+    throw new OnDeviceUnavailableError(proposal);
+  }
+
+  const model = createGuardModel(
+    onDeviceOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
+  );
 
   const deviceModelReady = model.initializeDeviceModel((progress) =>
     onDownloadProgress?.(progress),
@@ -155,7 +208,7 @@ export async function analyzeAction(
       result = await model.generateContent(buildPrompt(proposal));
     } catch (cause) {
       // With an on-device adapter present, the SDK throws here before any cloud call.
-      throw onDeviceUnavailableError(proposal, cause);
+      throw new OnDeviceUnavailableError(proposal, cause);
     }
   } else {
     // PREFER_ON_DEVICE intentionally lets generateContent use cloud fallback.

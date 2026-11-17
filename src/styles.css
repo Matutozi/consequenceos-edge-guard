@@ -82,6 +82,19 @@ input:focus, textarea:focus, select:focus { border-color: rgba(82,229,154,.55); 
 .toggle-row strong { color: var(--ink); font-size: 12px; }
 .toggle-row small { color: var(--muted); font-weight: 400; }
 .toggle-row input { width: 36px; height: 20px; accent-color: var(--green); }
+.model-panel { display: flex; align-items: flex-start; gap: 11px; padding: 12px 13px; margin-bottom: 18px; border: 1px dashed var(--line); border-radius: 9px; color: var(--muted); }
+.model-panel.ready { border-style: solid; border-color: rgba(82,229,154,.25); background: rgba(82,229,154,.04); }
+.model-icon { flex: none; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: rgba(255,255,255,.04); }
+.model-panel.ready .model-icon { color: var(--green); background: rgba(82,229,154,.08); }
+.model-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.model-text strong { color: var(--ink); font-size: 12px; }
+.model-text small { font-size: 11px; line-height: 1.45; }
+.model-error { color: #ffaaa5; }
+.model-progress { display: block; height: 4px; margin-top: 6px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; }
+.model-progress span { display: block; height: 100%; background: var(--green); transition: width .3s; }
+.model-panel button { flex: none; align-self: center; display: flex; align-items: center; gap: 6px; color: var(--green); background: transparent; border: 1px solid rgba(82,229,154,.35); padding: 7px 11px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+.model-panel button:hover:not(:disabled) { background: rgba(82,229,154,.08); }
+.model-panel button:disabled { opacity: .5; cursor: not-allowed; }
 .analyze-button { width: 100%; border: 0; background: var(--green); color: #06130c; padding: 14px 18px; border-radius: 9px; display: flex; align-items: center; justify-content: center; gap: 9px; font-weight: 700; transition: transform .2s, box-shadow .2s; }
 .analyze-button svg:last-child { margin-left: auto; }
 .analyze-button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(82,229,154,.15); }

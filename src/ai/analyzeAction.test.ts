@@ -27,7 +27,9 @@ vi.mock("firebase/ai", () => ({
   },
 }));
 
-const { analyzeAction } = await import("./analyzeAction");
+const { analyzeAction, getDeviceModelStatus, OnDeviceUnavailableError } = await import(
+  "./analyzeAction"
+);
 
 const assessmentJson = JSON.stringify({
   riskLevel: "low",
@@ -48,6 +50,10 @@ const internal: ActionProposal = {
 };
 
 const confidential: ActionProposal = { ...internal, dataSensitivity: "confidential" };
+
+function readyModel() {
+  return { availability: vi.fn().mockResolvedValue("available") };
+}
 
 function cloudResponse() {
   return { response: { text: () => assessmentJson, inferenceSource: "in_cloud" } };
@@ -70,6 +76,7 @@ afterEach(() => {
 describe("analyzeAction privacy routing", () => {
   it("never calls the model for sensitive data when the browser has no on-device API", async () => {
     await expect(analyzeAction(confidential)).rejects.toThrow(/nothing was sent to the cloud/);
+    await expect(analyzeAction(confidential)).rejects.toBeInstanceOf(OnDeviceUnavailableError);
     expect(sdk.getGenerativeModel).not.toHaveBeenCalled();
     expect(sdk.generateContent).not.toHaveBeenCalled();
   });
@@ -86,8 +93,17 @@ describe("analyzeAction privacy routing", () => {
     expect(result.inferenceSource).toBe("IN_CLOUD");
   });
 
-  it("requests ONLY_ON_DEVICE for sensitive data when the on-device API exists", async () => {
-    (globalThis as { LanguageModel?: unknown }).LanguageModel = {};
+  it("does not wait for a model download for sensitive data", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: vi.fn().mockResolvedValue("downloadable"),
+    };
+    await expect(analyzeAction(confidential)).rejects.toBeInstanceOf(OnDeviceUnavailableError);
+    expect(sdk.getGenerativeModel).not.toHaveBeenCalled();
+    expect(sdk.initializeDeviceModel).not.toHaveBeenCalled();
+  });
+
+  it("requests ONLY_ON_DEVICE for sensitive data when the on-device model is ready", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = readyModel();
     sdk.generateContent.mockResolvedValue({
       response: { text: () => assessmentJson, inferenceSource: "on_device" },
     });
@@ -97,7 +113,27 @@ describe("analyzeAction privacy routing", () => {
   });
 
   it("discards a sensitive result that did not run on device", async () => {
-    (globalThis as { LanguageModel?: unknown }).LanguageModel = {};
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = readyModel();
     await expect(analyzeAction(confidential)).rejects.toThrow(/unexpectedly processed outside/);
+  });
+});
+
+describe("getDeviceModelStatus", () => {
+  it("reports unsupported when the browser has no Prompt API", async () => {
+    expect(await getDeviceModelStatus()).toBe("unsupported");
+  });
+
+  it("passes through Chrome's availability", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: vi.fn().mockResolvedValue("downloadable"),
+    };
+    expect(await getDeviceModelStatus()).toBe("downloadable");
+  });
+
+  it("treats an availability failure as unavailable", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = {
+      availability: vi.fn().mockRejectedValue(new Error("boom")),
+    };
+    expect(await getDeviceModelStatus()).toBe("unavailable");
   });
 });

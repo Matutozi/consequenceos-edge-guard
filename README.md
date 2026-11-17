@@ -35,13 +35,18 @@ the model reports.
 ## Current demo flow
 
 1. Describe the agent, intended action, target, context, data class, and reversibility.
-2. Firebase AI Logic requests structured risk output. Public and internal proposals
+   The panel above **Evaluate** shows whether Gemini Nano is ready and offers a
+   **Download** button with progress when it is not.
+2. Hard policy rules run first, with no model call. An irreversible action on
+   restricted data is denied the same way in every browser, online or offline.
+3. Firebase AI Logic requests structured risk output. Public and internal proposals
    use `InferenceMode.PREFER_ON_DEVICE`. Confidential and restricted proposals use
-   `InferenceMode.ONLY_ON_DEVICE` unless the user explicitly allows cloud analysis;
-   if Gemini Nano is unavailable, the analysis fails instead of falling back silently.
-3. The interface reports `ON_DEVICE` or `IN_CLOUD` from the actual response.
-4. The policy engine produces an execution decision.
-5. The browser produces a downloadable SHA-256 decision receipt.
+   `InferenceMode.ONLY_ON_DEVICE` unless the user explicitly allows cloud analysis.
+   If Gemini Nano is not ready, nothing is sent to the cloud: the action fails closed
+   to `require_approval`, and the receipt records that no model ran.
+4. The interface reports `ON_DEVICE`, `IN_CLOUD`, or `NONE` (policy only).
+5. The policy engine produces an execution decision.
+6. The browser produces a downloadable SHA-256 decision receipt.
 
 > The digest covers every receipt field except `digest`, serialized as JSON with
 > sorted keys (`verifyReceipt` in `src/domain/receipt.ts` recomputes it). It detects
