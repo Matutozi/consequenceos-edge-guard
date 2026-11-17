@@ -1,3 +1,4 @@
+import { DEFAULT_POLICY } from "../domain/policyConfig";
 import type { DataSensitivity } from "../domain/types";
 
 /**
@@ -30,11 +31,12 @@ export interface ToolMeta {
   fanout?: { arg: string };
 }
 
-/** Values that mean "every target" in a fanout argument. Compared without case or spaces. */
-export const WILDCARD_TARGETS = ["all", "*", "everyone", "everybody", "all users", "every user", "any"];
+/** Values that mean "every target" in a fanout argument, unless the policy sets its own. */
+export const WILDCARD_TARGETS = DEFAULT_POLICY.wildcardTargets;
 
-export function isWildcardTarget(value: unknown): boolean {
-  return typeof value === "string" && WILDCARD_TARGETS.includes(value.trim().toLowerCase());
+/** Compared without case or surrounding spaces. */
+export function isWildcardTarget(value: unknown, wildcards: string[] = WILDCARD_TARGETS): boolean {
+  return typeof value === "string" && wildcards.includes(value.trim().toLowerCase());
 }
 
 /** Domains that count as inside the organization. */

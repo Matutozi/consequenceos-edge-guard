@@ -6,7 +6,7 @@ import { defaultRegistry, type ToolRegistry } from "../ops/registry";
  * three model-assessed tools; these add the consequence types an ops agent meets:
  * permissions, money, capacity, public communication and DNS.
  */
-const evalTools: ToolRegistry = {
+export const evalTools: ToolRegistry = {
   grant_role: {
     system: "Northwind identity provider",
     description: "Give a user a role, such as viewer, editor or admin.",

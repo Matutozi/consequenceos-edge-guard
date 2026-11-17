@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { defaultRegistry, INTERNAL_DOMAINS } from "./registry";
-import { DOMAINS_PARAM, parseDomains, parseRegistry, REGISTRY_PARAM } from "./registryConfig";
+import { DEFAULT_POLICY } from "../domain/policyConfig";
+import { DOMAINS_PARAM, parseDomains, parseRegistry, policyFromRemote, POLICY_PARAM, REGISTRY_PARAM } from "./registryConfig";
 
 const template = JSON.parse(
   readFileSync(new URL("../../remoteconfig.template.json", import.meta.url), "utf8"),
@@ -52,5 +53,18 @@ describe("remoteconfig.template.json", () => {
     expect(template.parameters[REGISTRY_PARAM].valueType).toBe("JSON");
     expect(JSON.parse(template.parameters[REGISTRY_PARAM].defaultValue.value)).toEqual(defaultRegistry);
     expect(JSON.parse(template.parameters[DOMAINS_PARAM].defaultValue.value)).toEqual(INTERNAL_DOMAINS);
+    expect(JSON.parse(template.parameters[POLICY_PARAM].defaultValue.value)).toEqual(DEFAULT_POLICY);
+  });
+});
+
+describe("policyFromRemote", () => {
+  it("uses the default policy when none is published", () => {
+    expect(policyFromRemote("default", "")).toEqual({ policy: DEFAULT_POLICY, tightened: [] });
+  });
+
+  it("tightens a published policy that is not valid JSON", () => {
+    const { policy, tightened } = policyFromRemote("remote", "{nope");
+    expect(tightened.length).toBeGreaterThan(0);
+    expect(policy.approvalAtRisk).toBe("low");
   });
 });

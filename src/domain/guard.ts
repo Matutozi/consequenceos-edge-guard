@@ -5,6 +5,7 @@ import {
   type AnalyzeOptions,
 } from "../ai/analyzeAction";
 import { escalateTimedOut, escalateUnassessed, evaluateHardRules, evaluatePolicy } from "./policy";
+import { DEFAULT_POLICY, type PolicyConfig } from "./policyConfig";
 import { createDecisionReceipt } from "./receipt";
 import type { ActionProposal, DecisionReceipt, ToolCallRecord } from "./types";
 
@@ -19,16 +20,20 @@ export async function guardAction(
   proposal: ActionProposal,
   options: AnalyzeOptions = {},
   toolCall?: ToolCallRecord,
+  policy: PolicyConfig = DEFAULT_POLICY,
 ): Promise<DecisionReceipt> {
   const hardDecision = evaluateHardRules(proposal);
   if (hardDecision) return createDecisionReceipt(proposal, noModel, hardDecision, toolCall);
 
   try {
-    const analysis = await analyzeAction(proposal, options);
+    const analysis = await analyzeAction(proposal, {
+      timeoutMs: policy.assessorTimeoutSeconds * 1000,
+      ...options,
+    });
     return createDecisionReceipt(
       proposal,
       analysis,
-      evaluatePolicy(proposal, analysis.assessment),
+      evaluatePolicy(proposal, analysis.assessment, policy),
       toolCall,
     );
   } catch (error) {

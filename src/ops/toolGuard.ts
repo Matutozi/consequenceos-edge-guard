@@ -1,6 +1,7 @@
 import type { AnalyzeOptions } from "../ai/analyzeAction";
 import { guardAction } from "../domain/guard";
 import { evaluateHardRules } from "../domain/policy";
+import { DEFAULT_POLICY, type PolicyConfig } from "../domain/policyConfig";
 import { canonicalJson, createDecisionReceipt } from "../domain/receipt";
 import type {
   ActionProposal,
@@ -60,10 +61,10 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
 /** A wildcard target means the call acts on everything; never leave that to a model. */
-function evaluateFanout(call: ToolCall, meta: ToolMeta): GuardDecision | undefined {
+function evaluateFanout(call: ToolCallRecord, meta: ToolMeta, wildcards: string[]): GuardDecision | undefined {
   if (!meta.fanout) return undefined;
   const target = call.args[meta.fanout.arg];
-  if (!isWildcardTarget(target)) return undefined;
+  if (!isWildcardTarget(target, wildcards)) return undefined;
   return {
     decision: "require_approval",
     rationale: [
@@ -73,12 +74,16 @@ function evaluateFanout(call: ToolCall, meta: ToolMeta): GuardDecision | undefin
   };
 }
 
-function isFastPath(meta: ToolMeta): boolean {
+function isFastPath(meta: ToolMeta, policy: PolicyConfig): boolean {
   const lowSensitivity = meta.sensitivity === "public" || meta.sensitivity === "internal";
-  return lowSensitivity && meta.reversible && (meta.readOnly || meta.lowImpact === true);
+  return (
+    lowSensitivity &&
+    meta.reversible &&
+    ((meta.readOnly && policy.fastPathReads) || (meta.lowImpact === true && policy.fastPathLowImpact))
+  );
 }
 
-function evaluateEgress(call: ToolCall, meta: ToolMeta, domains: string[]): GuardDecision | undefined {
+function evaluateEgress(call: ToolCallRecord, meta: ToolMeta, domains: string[]): GuardDecision | undefined {
   if (!meta.egress) return undefined;
   const destination = call.args[meta.egress.arg];
   if (isInternalDestination(destination, domains)) return undefined;
@@ -90,11 +95,48 @@ function evaluateEgress(call: ToolCall, meta: ToolMeta, domains: string[]): Guar
       };
 }
 
+/**
+ * Everything decided without a model, as a pure function: egress, hard rules, the
+ * fanout rule and the fast path. Returns undefined when the call needs the assessor.
+ * The Policy page uses it to score a draft without running anything.
+ */
+export function decideByRules(
+  call: ToolCallRecord,
+  registry: ToolRegistry,
+  internalDomains: string[] = INTERNAL_DOMAINS,
+  policy: PolicyConfig = DEFAULT_POLICY,
+): GuardDecision | undefined {
+  const meta = lookupTool(registry, call.tool);
+  const proposal = toProposal({ ...call, agent: "", reason: "" }, meta);
+  const ruled =
+    evaluateEgress(call, meta, internalDomains) ?? evaluateHardRules(proposal) ?? evaluateFanout(call, meta, policy.wildcardTargets);
+  if (ruled) {
+    if (!meta.registered) {
+      ruled.rationale.unshift(`${call.tool} is not in the tool registry, so it is treated as restricted and irreversible.`);
+    }
+    return ruled;
+  }
+  if (isFastPath(meta, policy)) {
+    return {
+      decision: "allow",
+      rationale: [
+        meta.readOnly
+          ? `${call.tool} only reads ${meta.sensitivity} data. Allowed by rule, with no model call.`
+          : `${call.tool} is low impact in the registry, can be undone and touches ${meta.sensitivity} data. ` +
+            "Allowed by rule, with no model call.",
+      ],
+    };
+  }
+  return undefined;
+}
+
 export interface ToolGuardOptions extends AnalyzeOptions {
   registry: ToolRegistry;
   signer: Signer;
   /** Domains inside the organization, for the egress rule. */
   internalDomains?: string[];
+  /** The adjustable thresholds. Defaults to DEFAULT_POLICY. */
+  policy?: PolicyConfig;
 }
 
 /**
@@ -109,40 +151,16 @@ export interface ToolGuardOptions extends AnalyzeOptions {
  */
 export async function guardToolCall(
   call: ToolCall,
-  { registry, signer, internalDomains = INTERNAL_DOMAINS, ...analyzeOptions }: ToolGuardOptions,
+  { registry, signer, internalDomains = INTERNAL_DOMAINS, policy = DEFAULT_POLICY, ...analyzeOptions }: ToolGuardOptions,
 ): Promise<SignedReceipt> {
   const meta = lookupTool(registry, call.tool);
   const proposal = toProposal(call, meta);
   const record = callRecord(call);
 
-  let receipt: DecisionReceipt;
-  const egressDecision = evaluateEgress(call, meta, internalDomains);
-  const hardDecision = egressDecision ?? evaluateHardRules(proposal) ?? evaluateFanout(call, meta);
-  if (hardDecision) {
-    if (!meta.registered) {
-      hardDecision.rationale.unshift(
-        `${call.tool} is not in the tool registry, so it is treated as restricted and irreversible.`,
-      );
-    }
-    receipt = await createDecisionReceipt(proposal, noModel, hardDecision, record);
-  } else if (isFastPath(meta)) {
-    receipt = await createDecisionReceipt(
-      proposal,
-      noModel,
-      {
-        decision: "allow",
-        rationale: [
-          meta.readOnly
-            ? `${call.tool} only reads ${meta.sensitivity} data. Allowed by rule, with no model call.`
-            : `${call.tool} is low impact in the registry, can be undone and touches ${meta.sensitivity} data. ` +
-              "Allowed by rule, with no model call.",
-        ],
-      },
-      record,
-    );
-  } else {
-    receipt = await guardAction(proposal, analyzeOptions, record);
-  }
+  const ruled = decideByRules(record, registry, internalDomains, policy);
+  const receipt: DecisionReceipt = ruled
+    ? await createDecisionReceipt(proposal, noModel, ruled, record)
+    : await guardAction(proposal, analyzeOptions, record, policy);
 
   return { receipt, signature: await signer.sign(receiptMessage(receipt)) };
 }

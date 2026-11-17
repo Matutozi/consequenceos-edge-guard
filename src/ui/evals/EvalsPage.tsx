@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { LoaderCircle, Play } from "lucide-react";
 import { evalCases } from "../../evals/cases";
+import { saveLastRun } from "../../evals/assessmentStore";
+import { assessmentsFrom } from "../../evals/preview";
 import { groupSummaries, runEvals, summarize, toMarkdown, type EvalResult, type EvalRoute, type Summary } from "../../evals/runEvals";
 import { PLANNER_MODEL } from "../../ops/planner";
 import { createSigner } from "../../ops/signing";
@@ -50,7 +52,16 @@ export default function EvalsPage() {
     });
     if (runId.current === id) {
       setRunning(false);
-      setFinishedAt(new Date().toISOString().slice(0, 10));
+      const date = new Date().toISOString().slice(0, 10);
+      setFinishedAt(date);
+      if (route !== "rules") {
+        saveLastRun({
+          route,
+          model: route === "cloud" ? PLANNER_MODEL : "Gemini Nano",
+          date,
+          assessments: assessmentsFrom(collected),
+        });
+      }
     }
   }
 
@@ -106,6 +117,9 @@ export default function EvalsPage() {
               <button type="button" className="btn" onClick={() => void copyMarkdown()}>
                 {copied ? "Copied" : "Copy results as Markdown"}
               </button>
+            )}
+            {results.length > 0 && !running && route !== "rules" && (
+              <a className="btn" href="#/policy">Test a policy change with these results</a>
             )}
           </div>
           <p className="quiet" style={{ margin: 0 }}>

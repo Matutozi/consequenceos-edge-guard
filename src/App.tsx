@@ -6,6 +6,7 @@ import { applyTheme, storedTheme, type Theme } from "./ui/theme";
 import IntegrationsPage from "./ui/integrations/IntegrationsPage";
 import EvalsPage from "./ui/evals/EvalsPage";
 import LandingPage from "./ui/landing/LandingPage";
+import PolicyPage from "./ui/policy/PolicyPage";
 import VerifyPage from "./verify/VerifyPage";
 
 type Route =
@@ -13,6 +14,7 @@ type Route =
   | { view: "console" }
   | { view: "inspector" }
   | { view: "evals" }
+  | { view: "policy" }
   | { view: "verify"; receiptId?: string }
   | { view: "integrations"; sourceId?: string };
 
@@ -21,6 +23,7 @@ function routeFromHash(): Route {
   if (hash === "#/console") return { view: "console" };
   if (hash === "#/inspector") return { view: "inspector" };
   if (hash === "#/evals") return { view: "evals" };
+  if (hash === "#/policy") return { view: "policy" };
   const verify = /^#\/verify(?:\/([^/]+))?$/.exec(hash);
   if (verify) return { view: "verify", receiptId: verify[1] && decodeURIComponent(verify[1]) };
   const integrations = /^#\/integrations(?:\/([^/]+))?$/.exec(hash);
@@ -48,6 +51,7 @@ export default function App() {
     ["inspector", "#/inspector", "Single action"],
     ["verify", "#/verify", "Verify"],
     ["integrations", "#/integrations", "Integrations"],
+    ["policy", "#/policy", "Policy"],
     ["evals", "#/evals", "Evals"],
   ];
 
@@ -90,6 +94,8 @@ export default function App() {
           <IntegrationsPage sourceId={route.sourceId} />
         ) : route.view === "evals" ? (
           <EvalsPage />
+        ) : route.view === "policy" ? (
+          <PolicyPage />
         ) : (
           <ActionInspector />
         )}

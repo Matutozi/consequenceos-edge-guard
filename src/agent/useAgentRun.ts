@@ -169,6 +169,7 @@ export function useAgentRun(): AgentRun {
           signed = await guardToolCall(call, {
             registry: loaded.registry,
             internalDomains: loaded.internalDomains,
+            policy: loaded.policy,
             signer,
           });
         } catch (caught) {

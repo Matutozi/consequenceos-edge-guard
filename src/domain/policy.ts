@@ -1,3 +1,4 @@
+import { DEFAULT_POLICY, riskRank, type PolicyConfig } from "./policyConfig";
 import type { ActionProposal, BlastRadius, GuardDecision, RiskAssessment } from "./types";
 
 const blastLabel: Record<BlastRadius, string> = {
@@ -47,19 +48,25 @@ export function escalateTimedOut(ms: number): GuardDecision {
 export function evaluatePolicy(
   proposal: ActionProposal,
   assessment: RiskAssessment,
+  policy: PolicyConfig = DEFAULT_POLICY,
 ): GuardDecision {
   const hardDecision = evaluateHardRules(proposal);
   if (hardDecision) return hardDecision;
 
+  const risk = riskRank(assessment.riskLevel);
   const rationale: string[] = [];
 
-  if (assessment.riskLevel === "critical") {
-    rationale.push("The assessor rated it critical.");
+  if (risk >= riskRank(policy.blockAtRisk)) {
+    rationale.push(
+      policy.blockAtRisk === "critical"
+        ? "The assessor rated it critical."
+        : `The assessor rated it ${assessment.riskLevel} risk, and policy blocks ${policy.blockAtRisk} risk and above.`,
+    );
     return { decision: "deny", rationale };
   }
 
-  // A block recommendation without critical risk is self-contradictory model output.
-  // It never allows the action; it escalates to a human instead of auto-denying.
+  // A block recommendation below the blocking threshold is self-contradictory model
+  // output. It never allows the action; it escalates to a human instead of auto-denying.
   if (assessment.recommendedControl === "block") {
     rationale.push(
       `The assessor recommended blocking but rated it only ${assessment.riskLevel} risk, so a person decides.`,
@@ -69,20 +76,20 @@ export function evaluatePolicy(
   // Escalation depends on structured facts only. The model's own "require_approval"
   // recommendation is recorded in the receipt but does not decide: otherwise routine
   // work escalates on vague caution and humans learn to approve without reading.
-  if (assessment.riskLevel === "high") {
-    rationale.push("The assessor rated it high risk.");
+  if (risk >= riskRank(policy.approvalAtRisk)) {
+    rationale.push(`The assessor rated it ${assessment.riskLevel} risk.`);
   }
 
-  if (!proposal.reversible && assessment.riskLevel !== "low") {
+  if (!proposal.reversible && risk > riskRank(policy.irreversibleAllowedUpTo)) {
     rationale.push(`It cannot be undone, and the assessor rated it ${assessment.riskLevel} risk.`);
   }
 
-  if (["confidential", "restricted"].includes(proposal.dataSensitivity)) {
+  if (policy.approvalForData.includes(proposal.dataSensitivity)) {
     rationale.push(`It touches ${proposal.dataSensitivity} data, which always needs a person to approve.`);
   }
 
-  if (["organization", "public"].includes(assessment.blastRadius)) {
-    rationale.push(`Its impact reaches ${assessment.blastRadius === "public" ? "people outside the company" : "the whole organization"}.`);
+  if (policy.approvalForImpact.includes(assessment.blastRadius)) {
+    rationale.push(`Its impact reaches ${blastLabel[assessment.blastRadius]}.`);
   }
 
   if (rationale.length > 0) {

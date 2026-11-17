@@ -1,9 +1,11 @@
+import { DEFAULT_POLICY, parsePolicy, type PolicyConfig } from "../domain/policyConfig";
 import { defaultRegistry, INTERNAL_DOMAINS, type ToolMeta, type ToolRegistry } from "./registry";
 import type { DataSensitivity } from "../domain/types";
 
 /** Remote Config parameter names. Keep in sync with remoteconfig.template.json. */
 export const REGISTRY_PARAM = "tool_registry";
 export const DOMAINS_PARAM = "internal_domains";
+export const POLICY_PARAM = "guard_policy";
 
 export interface LoadedRegistry {
   registry: ToolRegistry;
@@ -14,6 +16,10 @@ export interface LoadedRegistry {
   rejected: string[];
   /** Why the bundled defaults were used, when they were. */
   fallbackReason?: string;
+  /** The adjustable thresholds. The default policy until one is published. */
+  policy: PolicyConfig;
+  /** Policy fields that were malformed in Remote Config and fell back to their strictest value. */
+  policyTightened: string[];
 }
 
 const SENSITIVITIES: DataSensitivity[] = ["public", "internal", "confidential", "restricted"];
@@ -99,7 +105,21 @@ export const bundledRegistry = (fallbackReason?: string): LoadedRegistry => ({
   source: "bundled-defaults",
   rejected: [],
   fallbackReason,
+  policy: DEFAULT_POLICY,
+  policyTightened: [],
 });
+
+/** An unpublished policy means the defaults; a published but malformed one tightens. */
+export function policyFromRemote(source: string, json: string): { policy: PolicyConfig; tightened: string[] } {
+  if (source !== "remote") return { policy: DEFAULT_POLICY, tightened: [] };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(json);
+  } catch {
+    raw = undefined;
+  }
+  return parsePolicy(raw);
+}
 
 /**
  * Loads the tool registry from Firebase Remote Config. If Remote Config is
@@ -137,7 +157,10 @@ export async function loadToolRegistry(): Promise<LoadedRegistry> {
     const internalDomains =
       domainsValue.getSource() === "remote" ? parseDomains(domainsValue.asString()) : INTERNAL_DOMAINS;
 
-    return { registry, internalDomains, source: "remote-config", rejected };
+    const policyValue = rc.getValue(remoteConfig, POLICY_PARAM);
+    const { policy, tightened } = policyFromRemote(policyValue.getSource(), policyValue.asString());
+
+    return { registry, internalDomains, source: "remote-config", rejected, policy, policyTightened: tightened };
   } catch (caught) {
     return bundledRegistry(
       `Remote Config could not be loaded: ${caught instanceof Error ? caught.message : "unknown error"}`,
