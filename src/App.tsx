@@ -4,9 +4,11 @@ import ActionInspector from "./ActionInspector";
 import ConsoleView from "./ui/console/ConsoleView";
 import { applyTheme, storedTheme, type Theme } from "./ui/theme";
 import IntegrationsPage from "./ui/integrations/IntegrationsPage";
+import LandingPage from "./ui/landing/LandingPage";
 import VerifyPage from "./verify/VerifyPage";
 
 type Route =
+  | { view: "landing" }
   | { view: "console" }
   | { view: "inspector" }
   | { view: "verify"; receiptId?: string }
@@ -14,12 +16,13 @@ type Route =
 
 function routeFromHash(): Route {
   const hash = window.location.hash;
+  if (hash === "#/console") return { view: "console" };
   if (hash === "#/inspector") return { view: "inspector" };
   const verify = /^#\/verify(?:\/([^/]+))?$/.exec(hash);
   if (verify) return { view: "verify", receiptId: verify[1] && decodeURIComponent(verify[1]) };
   const integrations = /^#\/integrations(?:\/([^/]+))?$/.exec(hash);
   if (integrations) return { view: "integrations", sourceId: integrations[1] && decodeURIComponent(integrations[1]) };
-  return { view: "console" };
+  return { view: "landing" };
 }
 
 export default function App() {
@@ -47,7 +50,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#/console">
+        <a className="brand" href="#/">
           <span className="brand-mark" aria-hidden="true"><ShieldCheck size={13} /></span>
           <span>Edge Guard</span>
         </a>
@@ -73,7 +76,9 @@ export default function App() {
       </header>
 
       <div className="app-main">
-        {route.view === "console" ? (
+        {route.view === "landing" ? (
+          <LandingPage />
+        ) : route.view === "console" ? (
           <ConsoleView />
         ) : route.view === "verify" ? (
           <VerifyPage receiptId={route.receiptId} />

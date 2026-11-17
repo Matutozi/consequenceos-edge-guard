@@ -323,3 +323,15 @@ table.data tr[aria-current="true"] td { background: var(--surface-2); }
 label.btn { cursor: pointer; }
 label.btn:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 textarea.mono { font-family: var(--mono); font-size: 12px; }
+
+/* Landing */
+.landing { max-width: 760px; padding-top: 64px; }
+.landing-hero h1 { margin: 0; font-size: 32px; line-height: 40px; font-weight: 600; letter-spacing: -0.02em; }
+.landing-hero p { margin: 16px 0 24px; font-size: 16px; line-height: 1.6; color: var(--text-2); }
+.landing-built { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border); }
+.landing-built h2 { margin: 0 0 16px; font-size: 14px; font-weight: 600; }
+.landing-built dl { margin: 0 0 24px; display: grid; gap: 16px; }
+.landing-built dt { font-size: 14px; font-weight: 500; }
+.landing-built dd { margin: 2px 0 0; font-size: 14px; color: var(--text-2); }
+a.btn { text-decoration: none; }
+@media (max-width: 760px) { .landing { padding-top: 32px; } .landing-hero h1 { font-size: 26px; line-height: 32px; } }

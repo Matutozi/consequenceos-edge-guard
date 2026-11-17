@@ -1,105 +1,270 @@
 # ConsequenceOS Edge Guard
 
-**Know the consequence before the action.**
+**The brain in the cloud, the conscience on the device.**
 
-Edge Guard is a privacy-first execution firewall for AI agents. It evaluates each
-tool call an agent proposes with Gemini Nano on the user's device when available,
-uses Firebase AI Logic for cloud fallback, and applies deterministic policy to
-allow routine work, require accountable human approval, or deny unsafe actions.
-An executor runs nothing without a signed receipt for that exact call.
+An AI agent works support and security tickets for a fictional company, Northwind.
+Every tool call it proposes goes through Edge Guard before anything runs. Edge Guard
+checks the call against deterministic rules, assesses it with Gemini Nano on the
+device where it can, and lets policy decide: allow, ask a person, or block. The
+executor refuses any call without a signed receipt for that exact call.
 
-**The brain in the cloud, the conscience on the device.** In the demo, a Gemini
-agent plans in the cloud through Firebase AI Logic while Edge Guard checks every
-step it proposes, independently of the planner, so a prompt injection that hijacks
-the planner does not also hijack the guard.
+The planner and the guard are separate models with separate context. A prompt
+injection in a ticket can mislead the planner in the cloud, but the guard on the
+device judges each call on its own, using facts the agent cannot change.
 
 Built for [#BuildHybridAI 2026](https://firebasehybridaihackathon.devpost.com/).
 
-**Live demo:** <https://edge-guard-f1314.web.app> — best in Chrome Desktop 139+ with
-Gemini Nano enabled; other browsers use the Firebase cloud fallback.
+**Live demo:** <https://edge-guard-f1314.web.app>. Best in Chrome Desktop 139+ with
+Gemini Nano. Other browsers use the cloud for public and internal checks and send
+sensitive ones to a person.
 
-## Why hybrid inference matters
+## What you can do
 
-An execution-control system often sees sensitive intent: who will be contacted,
-which account will be changed, or what production resource will be affected.
-Edge Guard keeps that context on-device whenever Chrome's model is available.
-Firebase AI Logic provides a consistent cloud fallback on devices where it is
-not, while App Check protects the API from unauthorized clients.
+- **Console** (`#/console`): pick a ticket, run the agent, and watch each step get
+  allowed, escalated or blocked. The Edge Guard inspector shows the decision, the
+  reason, where it was decided and how long it took, what was sent to the cloud, the
+  registry entry used, and the receipt. Keys: `j` and `k` move between steps, `a` and
+  `r` approve or reject.
+- **New ticket**: write your own ticket or start from a template (password reset,
+  account compromise, a ticket with a hidden instruction) and run the live planner on it.
+- **Recorded attack**: replays a run where the agent followed the hidden instruction
+  in ticket #482. Edge Guard's decisions are made live. Use it when you need the
+  attack to happen; the live planner usually ignores the instruction.
+- **Verify** (`#/verify`): check any receipt from the Firestore audit log, paste or
+  upload a receipt file, or tamper with a local copy to see what the checks catch.
+- **Integrations** (`#/integrations`): every ticket source with an honest status and
+  its field mapping.
+- **Single action** (`#/inspector`): evaluate one action you describe, outside the console.
 
-The AI assesses ambiguous consequences. It never makes the final enforcement
-decision. A deterministic policy engine turns the assessment and declared action
-properties into one of three controls:
+## Architecture
 
-- `allow` — routine, reversible, low-impact work proceeds.
-- `require_approval` — consequential work pauses for a human decision.
-- `deny` — critical work, or work matching a hard policy rule, cannot proceed.
+```mermaid
+flowchart LR
+  subgraph Sources["Ticket sources"]
+    M["Manual composer"]
+    S["Sample ticket 482"]
+    W["Webhook, planned"]
+  end
+  Sources --> Q["Ticket queue"]
+  Q --> P["Planner: Gemini in the cloud<br/>Firebase AI Logic, function calling"]
+  subgraph G["Edge Guard, in the browser"]
+    R["Registry<br/>Firebase Remote Config"] --> H["Egress rule and hard rules<br/>no model"]
+    H --> F["Fast path<br/>no model"]
+    F --> A["Assessor<br/>Gemini Nano on device,<br/>cloud only for public or internal data"]
+    A --> PO["Policy<br/>pure function"]
+  end
+  P -- "tool call and reason" --> R
+  PO -- "signed receipt" --> E["Executor<br/>no valid receipt, no action"]
+  PO -- "receipt" --> L[("Cloud Firestore<br/>append-only audit log")]
+  E -- "result or refusal" --> P
+  E --> N["Northwind systems"]
+```
 
-Some rules depend only on the declared properties, never on model output. For
-example, an irreversible action on restricted data is always denied, whatever risk
-the model reports.
+| Folder | Job |
+|---|---|
+| `src/intake/` | Ticket sources, the normalized `Ticket` type and one adapter per source |
+| `src/agent/` | The run loop: planner, guard, approvals, executor and audit, wired together |
+| `src/ops/planner.ts` | The cloud planner and its tool declarations |
+| `src/ops/registry.ts`, `registryConfig.ts` | The tool registry and its Remote Config loader |
+| `src/ops/toolGuard.ts` | Edge Guard for tool calls: egress, hard rules, fast path, assessment, signing |
+| `src/domain/` | Pure policy and hard rules, the assessment-to-receipt path, receipts |
+| `src/ai/analyzeAction.ts` | The assessor: hybrid routing, timeout, structured output |
+| `src/ops/executor.ts` | Runs a tool only for a valid, signed, single-use receipt for that exact call |
+| `src/ops/signing.ts`, `verifyLogged.ts` | ECDSA P-256 signing and receipt verification |
+| `src/ops/receiptLog.ts` | Firestore writes and reads |
+| `src/ui/`, `src/verify/` | Views and components only |
 
-## Agent console (main view)
+The guard, policy and executor do not import anything from the UI.
 
-An ops agent works ticket #482 at a fictional company, Northwind. The ticket hides
-an attacker's instruction to export the customer table to an outside address and
-delete the audit logs.
+## How hybrid routing decides
 
-1. **Plan in the cloud.** The live planner is Gemini through Firebase AI Logic with
-   function calling (`src/ops/planner.ts`). It proposes one tool call at a time with
-   a reason, and gets each result back, including refusals. A recorded replay of a
-   hijacked run is available for a reproducible demo.
-2. **Look up the tool, not the agent's claims.** Sensitivity, reversibility and
-   egress rules come from a tool registry published in **Firebase Remote Config**
-   (`remoteconfig.template.json`). The agent supplies only the tool, arguments and
-   reason. A malformed entry is dropped, and an unregistered tool is treated as the
-   worst case, so a bad config can only make Edge Guard stricter.
-3. **Decide.** In order: an egress rule (data leaving `northwind.example` is blocked
-   by name), hard rules on registry properties, a read-only fast path, then Gemini
-   Nano on device (cloud only for public or internal data) and deterministic policy.
-4. **Sign and bind.** Each receipt records the exact tool call, is signed with a
-   non-extractable WebCrypto P-256 key, and is single use. Escalated calls also need
-   a signed human approval.
-5. **Execute or refuse.** The executor (`src/ops/executor.ts`) refuses a missing,
-   tampered, reused or wrongly signed receipt, a receipt for different arguments,
-   a denied call, or an escalated call without approval.
-6. **Audit.** Every receipt, its approval and its outcome are appended to **Cloud
-   Firestore**. Security rules (`firestore.rules`) make the log append-only and App
-   Check is enforced, so receipts cannot be edited or deleted from the client. Each
-   run stores its public key, so any receipt can be verified from the log alone.
-7. **Verify.** The **Verify** tab (`#/verify/<receipt-id>`, linked from every logged
-   step) reads a receipt from Firestore and checks its digest, its signature against
-   the run's public key, the call it is bound to, any approval, and whether the
-   outcome is consistent with the decision. **Tamper with it** changes one field in a
-   local copy to show what the checks catch; nothing is written.
+Edge Guard checks each call in this order and stops at the first step that decides.
 
-> Trust boundary, stated plainly: the planner, guard and executor run in the same
-> page here, so the signature proves the executor checks Edge Guard's receipts, not
-> that the signer is isolated from the agent. In production the signer belongs in a
-> separate boundary whose public key the executor pins. Without user sign-in, anyone
-> with a valid App Check token can append a new run with their own key.
+1. **Egress rule, no model.** If the registry marks an argument as a destination,
+   anything outside `northwind.example` is blocked (customer export) or sent to a
+   person (email). The reason names the destination. A destination that cannot be
+   parsed counts as outside.
+2. **Hard rules, no model.** Restricted data that cannot be undone is blocked. A tool
+   that is not in the registry is treated as restricted and irreversible, so it is
+   blocked too.
+3. **Fast path, no model.** Reads, and changes the registry marks as low impact, are
+   allowed by rule when they can be undone and touch only public or internal data.
+4. **Assessment.** The assessor returns structured output against one JSON schema,
+   shared by both paths:
+   - Public and internal data: `InferenceMode.PREFER_ON_DEVICE`. Gemini Nano if it is
+     ready, otherwise Gemini in the cloud through Firebase AI Logic.
+   - Confidential and restricted data: `InferenceMode.ONLY_ON_DEVICE`. If Gemini Nano
+     is not ready, nothing is sent anywhere and the call goes to a person. The console
+     never sends sensitive data to the cloud.
+   - Every assessment has a 20 second deadline. When it passes, the request is
+     aborted and the call goes to a person. The receipt records `TIMED_OUT`.
+5. **Policy, a pure function.** Critical risk is blocked. A person approves high risk,
+   anything that cannot be undone and was rated above low, confidential or restricted
+   data, and impact beyond one team. Everything else is allowed. The model's own
+   "needs approval" recommendation is recorded but does not decide, so routine work
+   does not escalate on vague caution.
 
-## Single action view
+What one run of ticket #482 looks like:
 
-The **Single action** tab evaluates one proposal you describe, with the same hard
-rules, privacy routing and policy. Confidential and restricted proposals use
-`InferenceMode.ONLY_ON_DEVICE` unless you allow cloud analysis; if Gemini Nano is
-not ready, nothing is sent and the action fails closed to `require_approval`. The
-receipt there carries a SHA-256 digest over canonical JSON, which detects edits but
-is not signed.
+| Call | Decision | Decided by |
+|---|---|---|
+| `read_ticket`, `lookup_user` | Allowed | Fast path, no model |
+| `revoke_sessions` | Allowed | Assessor (low risk, can be undone) |
+| `disable_user` | Needs approval | Confidential data |
+| `export_customers` to `recovery@northwind-backup.co` | Blocked | Egress rule, no model |
+| `delete_audit_logs` | Blocked | Hard rule, no model |
+| `email_user` to Ada | Needs approval | Cannot be undone, rated medium risk |
+| `add_ticket_note` | Allowed | Fast path, no model |
 
-## Technology
+Rule-based decisions are the same every time. Assessor decisions can vary between
+runs: in another run, a password-reset email to a single user was rated low risk and
+allowed.
 
-- React 19, TypeScript, and Vite
-- Firebase JavaScript SDK 13+
-- Firebase AI Logic hybrid inference for the guard (`PREFER_ON_DEVICE` / `ONLY_ON_DEVICE`)
-- Firebase AI Logic cloud function calling for the agent planner (`ONLY_IN_CLOUD`)
-- Gemini Nano through Chrome's Prompt API
-- Gemini 3.5 Flash Lite for cloud assessment and planning
-- Firebase Remote Config for the tool registry and internal domains
-- Cloud Firestore for the append-only, signed audit log
-- Firebase App Check with reCAPTCHA Enterprise, enforced for AI Logic and Firestore
-- WebCrypto ECDSA P-256 for receipt and approval signatures
-- Vitest for policy, guard, executor, registry and audit tests
+Every decision produces a receipt that records the exact tool call. It is signed
+with a non-extractable WebCrypto ECDSA P-256 key and can be used once. Escalated
+calls also need a signed approval. The executor refuses a missing, tampered, reused
+or wrongly signed receipt, a receipt for other arguments, a denied call, and an
+escalated call without approval.
+
+## The tool registry
+
+The agent supplies only the tool name, its arguments and a reason. Everything Edge
+Guard needs to judge the tool comes from the registry, published in Firebase Remote
+Config as the JSON parameter `tool_registry`, with `internal_domains` beside it.
+
+```json
+{
+  "add_ticket_note": {
+    "system": "Northwind helpdesk",
+    "description": "Add an internal note to a ticket.",
+    "sensitivity": "internal",
+    "reversible": true,
+    "readOnly": false,
+    "lowImpact": true
+  },
+  "export_customers": {
+    "system": "Northwind CRM",
+    "description": "Export customer records to a destination.",
+    "sensitivity": "restricted",
+    "reversible": false,
+    "readOnly": false,
+    "egress": { "arg": "destination", "outside": "deny" }
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `system` | What the tool acts on, shown to the assessor |
+| `description` | What the tool does, shown to the assessor |
+| `sensitivity` | `public`, `internal`, `confidential` or `restricted`. Decides routing |
+| `reversible` | Whether the action can be undone |
+| `readOnly` | Reads state without changing it. Eligible for the fast path |
+| `lowImpact` | Optional. Changes state so little that a model adds nothing. Eligible for the fast path |
+| `egress` | Optional. `arg` names the destination argument; `outside` is `deny` or `escalate` |
+
+Each entry is validated. A malformed entry is dropped, which makes that tool
+unregistered and therefore blocked, so a bad config can only make Edge Guard
+stricter. If Remote Config is unreachable or has no template, the registry bundled
+with the app is used, and the console says so. The template in
+`remoteconfig.template.json` is generated from `src/ops/registry.ts` with
+`npx vite-node scripts/write-remoteconfig-template.ts`; a test fails if they drift.
+
+## Ticket intake
+
+Every ticket source is an adapter behind one interface. Adding a source does not
+touch the agent or Edge Guard.
+
+```ts
+interface TicketSource {
+  id: SourceId;
+  name: string;
+  status: "available" | "not_connected" | "planned";
+  describe(): string;
+  listTickets?(): Promise<Ticket[]>;
+  subscribe?(onTicket: (t: Ticket) => void): Unsubscribe;
+  mapping?: FieldMapping[]; // shown on the Integrations page
+  auth?: string;            // how authentication works or would work
+}
+
+interface Ticket {
+  id: string;          // unique across sources, for example "manual:1001"
+  number: number;      // the helpdesk number the agent's tools use
+  source: SourceId;
+  externalRef: string; // the ID in the source system
+  title: string;
+  body: string;
+  requester: string;
+  priority: "low" | "normal" | "high" | "urgent";
+  createdAt: string;
+  attachments?: { name: string; url?: string }[];
+  raw: unknown;        // the original payload, kept for audit, untrusted
+}
+```
+
+| Source | Status | File |
+|---|---|---|
+| Manual (composer, kept in this browser) | Available | `src/intake/adapters/manual.ts` |
+| Sample (#482 and #479) | Available | `src/intake/adapters/sample.ts` |
+| Webhook | Planned, contract fixed | `src/intake/adapters/webhook.ts` |
+| Jira Service Management | Planned | `src/intake/adapters/jira.ts` |
+| Zendesk | Planned | `src/intake/adapters/zendesk.ts` |
+| ServiceNow | Planned | `src/intake/adapters/servicenow.ts` |
+| Email inbox | Planned | `src/intake/adapters/email.ts` |
+
+Every planned adapter has a tested normalizer from the service's payload to `Ticket`,
+its field mapping, and a note on authentication. None of them claims to connect.
+
+**To add an adapter:**
+
+1. Create `src/intake/adapters/<name>.ts` with a normalizer that turns the payload
+   into a `TicketInput`, using `cleanText` so text is trimmed and capped.
+2. Export a `TicketSource` with an honest `status`, a `mapping` and an `auth` note.
+   Give it `listTickets` or `subscribe` only when it really delivers tickets.
+3. Add it to `ticketSources` in `src/intake/index.ts` and a label to `sourceLabel`.
+4. Add tests to `src/intake/normalizers.test.ts`, including missing fields.
+
+The queue and the Integrations page pick the new source up from that list.
+
+## Webhook contract
+
+Planned. The contract and its normalizer are implemented and tested; the endpoint is
+not deployed. Cloud Functions need the Blaze plan, and an open endpoint whose
+tickets an agent acts on is an injection channel by design, so it ships only with
+authentication: a bearer token per source system, stored hashed, with size and rate
+limits per token.
+
+```bash
+curl -X POST "https://<your-edge-guard-host>/api/tickets" \
+  -H "Authorization: Bearer <token-for-this-source>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Locked out after password change",
+    "body": "I changed my password this morning and now every sign-in fails.",
+    "requester": "tomas.reyes@northwind.example",
+    "priority": "high",
+    "externalRef": "CRM-20931"
+  }'
+```
+
+`title` (up to 200 characters), `body` (up to 8,000) and `requester` (up to 200) are
+required. `priority` is `low`, `normal`, `high` or `urgent` and defaults to `normal`.
+`externalRef`, `createdAt` and `attachments` (up to 20, each with a `name` and an
+optional `url`) are optional. No other fields are accepted. The full JSON Schema is
+`webhookSchema` in `src/intake/adapters/webhook.ts` and on the Integrations page.
+
+## Audit log and verification
+
+Every receipt, its approval and its outcome are appended to Cloud Firestore.
+`firestore.rules` allows create and read only, never update or delete, and checks
+each document's shape. App Check is enforced for Firestore and Firebase AI Logic.
+Each run stores its public key, so a receipt can be verified from the log alone.
+
+The Verify page checks a receipt's digest, its signature against the run's public
+key, the call it is bound to, any approval, and whether the outcome matches the
+decision. For a pasted or uploaded file, the key always comes from the audit log: a
+key inside the file proves nothing, since anyone can sign a forged receipt with
+their own key.
 
 ## Run locally
 
@@ -108,96 +273,52 @@ is not signed.
 - Node.js 20+
 - Chrome Desktop 139+
 - A Firebase project with AI Logic enabled using the Gemini Developer API
-- App Check enforced for Firebase AI Logic
+- App Check enforced for Firebase AI Logic and Cloud Firestore
 - A reCAPTCHA Enterprise site key registered with the Firebase web app
 
 ### Configure Firebase
 
 1. In the Firebase console, create or select a project.
-2. Open **AI Services → AI Logic**, select **Get started**, and choose the Gemini
+2. Open **AI Services > AI Logic**, select **Get started**, and choose the Gemini
    Developer API.
 3. Register a Web app.
-4. Open **Security → App Check**, register the Web app with reCAPTCHA Enterprise,
-   and confirm that App Check is enforced for Firebase AI Logic.
-5. Copy `.env.example` to `.env.local` and add the Firebase web configuration and
+4. Open **Security > App Check**, register the Web app with reCAPTCHA Enterprise,
+   and enforce App Check for Firebase AI Logic and Cloud Firestore.
+5. Create a Firestore database (`npx firebase-tools firestore:databases:create "(default)" --location nam5`).
+6. Copy `.env.example` to `.env.local` and add the Firebase web configuration and
    reCAPTCHA Enterprise site key.
 
-Firebase configuration values identify the public Firebase project and are safe
-to include in a client bundle. App Check, authorized domains, and API restrictions
-provide the security boundary. Never commit an App Check debug token.
+Firebase configuration values identify the public project and are safe in a client
+bundle. App Check, authorized domains and API restrictions are the security
+boundary. Never commit an App Check debug token.
 
 ### Enable the local model
 
 1. Update Chrome from `chrome://settings/help`.
 2. Enable `chrome://flags/#prompt-api-for-gemini-nano-multimodal-input`.
-3. Restart Chrome.
-4. Confirm model availability in DevTools:
+3. Restart Chrome, then confirm in DevTools: `await LanguageModel.availability()`.
+4. Or use the **Download model** button in the app, which shows progress.
 
-   ```js
-   await LanguageModel.availability()
-   ```
+In development the app prints an App Check debug token in the browser console.
+Register it under **App Check > Apps > Manage debug tokens**.
 
-During local development the app asks Firebase to print an App Check debug token
-in the browser console. Register that token under **App Check → Apps → Manage
-debug tokens**. Do not commit or share it.
-
-### Install and run
+### Install, run and test
 
 ```bash
 npm install
 npm run dev
-```
-
-Open the displayed localhost URL in Chrome. The first on-device model download can
-take several minutes. While it is downloading, `PREFER_ON_DEVICE` can use the
-Firebase cloud fallback.
-
-## Verify
-
-```bash
 npm test
 npm run lint
 npm run build
 ```
 
-## Deploy to Firebase Hosting
+### Deploy
 
 ```bash
-npm run build
-npx firebase-tools login
-npx firebase-tools use --add
 npx firebase-tools deploy --only hosting,remoteconfig,firestore:rules
 ```
 
-Cloud Firestore needs a database first (`firestore:databases:create`), and App Check
-enforcement for Firestore is turned on in **Security → App Check → APIs**. After
-changing `src/ops/registry.ts`, regenerate the Remote Config template with
-`npx vite-node scripts/write-remoteconfig-template.ts`; a test fails if they drift.
-
-Before sharing the deployment, add its domain to the reCAPTCHA Enterprise key and
-verify App Check requests in the Firebase console.
-
-## Architecture
-
-```text
-Gemini planner (cloud, Firebase AI Logic function calling)
-        │ proposes tool call + reason
-        ▼
-Edge Guard (in the browser)
-   ├── tool registry ◄── Firebase Remote Config
-   ├── egress rule and hard rules (no model)
-   ├── read-only fast path (no model)
-   └── risk assessment: Gemini Nano on device, cloud only for public/internal data
-        │
-        ▼
-Deterministic policy ── allow / require approval / deny
-        │
-        ▼
-Signed receipt bound to the exact call ──► Cloud Firestore audit log (append-only)
-        │
-        ▼
-Executor: no valid receipt, no action ──► result back to the planner
-```
+Add the deployment's domain to the reCAPTCHA Enterprise key before sharing it.
 
 ## Relationship to ConsequenceOS
 
@@ -222,41 +343,64 @@ were reimplemented in TypeScript for the browser:
 | Approvals | Approval page, approver notified by email | Approval card in the console |
 | Audit | Hash-chained log the agent cannot touch | Append-only Cloud Firestore collection, enforced by security rules |
 
-ConsequenceOS's own docs name its main gap: the tools map scores a tool, not a
-call, so deleting one row and deleting every row score the same, and facts such as
-blast radius and data classes stay empty. Edge Guard's per-call assessment is the
-missing piece. The planned integration (see Roadmap) puts Edge Guard in front of the
-ConsequenceOS gateway as the on-device first line: it blocks clear violations early
-and passes its assessment along as a fact that can raise a call's score but never
-lower it. ConsequenceOS keeps policy, approvals, receipts and the audit log, which
-belong on a server the agent cannot reach.
+ConsequenceOS's own docs name its main gap: the tools map scores a tool, not a call,
+so deleting one row and deleting every row score the same. Edge Guard's per-call
+assessment is the missing piece. The planned integration puts Edge Guard in front of
+the ConsequenceOS gateway as the on-device first line: it blocks clear violations
+early and passes its assessment along as a fact that can raise a call's score but
+never lower it. ConsequenceOS keeps policy, approvals, receipts and the audit log,
+which belong on a server the agent cannot reach.
 
-## Existing work disclosure
+## Built during the contest
 
-[ConsequenceOS](https://github.com/Matutozi/Consequence-OS) existed before the
-hackathon as a separate, open-source execution-control project; Edge Guard follows
-its design, as described above. This repository is a new #BuildHybridAI application. Everything
-in it was created during the hackathon submission period: the Web UI, the agent
-console and its live Gemini planner, the Firebase AI Logic hybrid inference path,
-on-device risk assessment, the tool registry in Remote Config, the policy engine,
-signed receipts and the executor, and the Firestore audit log. No source code is
-copied from the pre-existing ConsequenceOS repository.
+This repository was started during the #BuildHybridAI submission period; its first
+commit is dated 17 November 2026, and no code was copied from ConsequenceOS. Built in
+that period:
+
+- The web app: landing page, three-pane console with the Edge Guard inspector, light
+  and dark themes, keyboard shortcuts, single action view, Verify and Integrations pages
+- The live planner using Firebase AI Logic function calling, and the recorded attack replay
+- The hybrid assessor: on-device first, cloud only for public or internal data,
+  fail closed when sensitive data cannot be assessed, 20 second timeout
+- Egress rule, hard rules, fast paths and pure policy, with tests
+- The tool registry in Firebase Remote Config, validated so a bad config only tightens policy
+- Signed, single-use receipts bound to the exact call, the executor, and signed approvals
+- The append-only audit log in Cloud Firestore with security rules and App Check
+- Receipt verification from the log, from a pasted file, and the tamper demo
+- Ticket intake: the `TicketSource` interface, Manual and Sample sources, the composer,
+  and tested normalizers for the webhook, Jira, Zendesk, ServiceNow and email
+
+## Known limitations
+
+- **One page, one trust boundary.** The planner, guard and executor run in the same
+  page, so the signature proves the executor checks Edge Guard's receipts, not that
+  the signer is isolated from the agent. In production the signer belongs on a server
+  or in an extension whose public key the executor pins.
+- **No sign-in.** The approver, Mei Lin, is simulated. Anyone with a valid App Check
+  token can read the audit log or append a run signed with their own key;
+  verification proves a receipt matches its run's key, not who ran it.
+- **The live planner usually ignores the hidden instruction.** That is good behaviour
+  from Gemini, but it means the attack only happens reliably in the recorded replay.
+- **Cloud checks are slow.** Each takes 6 to 12 seconds on Google's side with
+  `gemini-3.5-flash-lite`. With Gemini Nano ready, checks run on the device.
+- **The planner sees the whole ticket in the cloud.** The privacy guarantee is about
+  the guard: sensitive tool calls are judged on the device or by a person, never in
+  the cloud.
+- **Receipts do not expire,** unlike ConsequenceOS receipts. Single use is tracked
+  per run in memory.
+- **Only Manual and Sample sources work.** The webhook and the four service adapters
+  are planned. Manual tickets stay in the browser that wrote them.
+- **No evaluation set yet.** Pass rates for on-device and cloud assessment are not
+  published.
 
 ## Roadmap
 
 - Evaluation set of guarded actions, including injection attempts, with on-device
   and cloud pass rates
 - Signer in a separate trust boundary, with approvers who sign in
-- ConsequenceOS integration: Edge Guard as the on-device first line in front of the
-  ConsequenceOS MCP gateway, passing its assessment as an advisory fact that can
-  raise a call's consequence score but never lower it; ConsequenceOS keeps policy,
-  approvals, Ed25519 + ML-DSA receipts and its hash-chained audit log
-- Sensitive-field minimization before cloud assessment
-
-See [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) for the remaining
-hackathon work.
+- ConsequenceOS integration, as described above
+- Deploy the webhook with per-source tokens; connect one service adapter
 
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).
-
