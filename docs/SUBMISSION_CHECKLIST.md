@@ -18,13 +18,13 @@ status. Never put credentials, debug tokens, or private submission answers here.
 - [x] Add deterministic allow, approval, and deny policy decisions.
 - [x] Produce a downloadable decision receipt with a verifiable SHA-256 digest.
 - [x] Add automated policy tests.
-- [ ] Create the Firebase project and register the Web app. **Owner action**
-- [ ] Add local Firebase values to `.env.local`. **Owner action**
-- [ ] Enable AI Logic with the Gemini Developer API. **Owner action**
-- [ ] Register reCAPTCHA Enterprise and enforce App Check. **Owner action**
-- [ ] Register the localhost App Check debug token. **Owner action**
+- [x] Create the Firebase project and register the Web app. **Owner action**
+- [x] Add local Firebase values to `.env.local`. **Owner action**
+- [x] Enable AI Logic with the Gemini Developer API. **Owner action**
+- [x] Register reCAPTCHA Enterprise and enforce App Check. **Owner action**
+- [x] Register the localhost App Check debug token. **Owner action**
 - [x] Confirm one `ON_DEVICE` request in Chrome 139+.
-- [ ] Confirm automatic `IN_CLOUD` fallback.
+- [x] Confirm automatic `IN_CLOUD` fallback.
 - [ ] Add named human approval and signed ConsequenceOS receipt verification.
 
 ## Quality and security
