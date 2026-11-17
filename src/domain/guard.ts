@@ -5,7 +5,7 @@ import {
 } from "../ai/analyzeAction";
 import { escalateUnassessed, evaluateHardRules, evaluatePolicy } from "./policy";
 import { createDecisionReceipt } from "./receipt";
-import type { ActionProposal, DecisionReceipt } from "./types";
+import type { ActionProposal, DecisionReceipt, ToolCallRecord } from "./types";
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
@@ -17,9 +17,10 @@ const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 export async function guardAction(
   proposal: ActionProposal,
   options: AnalyzeOptions = {},
+  toolCall?: ToolCallRecord,
 ): Promise<DecisionReceipt> {
   const hardDecision = evaluateHardRules(proposal);
-  if (hardDecision) return createDecisionReceipt(proposal, noModel, hardDecision);
+  if (hardDecision) return createDecisionReceipt(proposal, noModel, hardDecision, toolCall);
 
   try {
     const analysis = await analyzeAction(proposal, options);
@@ -27,10 +28,11 @@ export async function guardAction(
       proposal,
       analysis,
       evaluatePolicy(proposal, analysis.assessment),
+      toolCall,
     );
   } catch (error) {
     if (error instanceof OnDeviceUnavailableError) {
-      return createDecisionReceipt(proposal, noModel, escalateUnassessed(proposal));
+      return createDecisionReceipt(proposal, noModel, escalateUnassessed(proposal), toolCall);
     }
     throw error;
   }

@@ -3,6 +3,7 @@ import type {
   DecisionReceipt,
   GuardDecision,
   ReceiptAnalysis,
+  ToolCallRecord,
 } from "./types";
 
 export const RECEIPT_DIGEST_ALGORITHM = "sha256-canonical-json-v1";
@@ -42,6 +43,7 @@ export async function createDecisionReceipt(
   proposal: ActionProposal,
   analysis: ReceiptAnalysis,
   decision: GuardDecision,
+  toolCall?: ToolCallRecord,
 ): Promise<DecisionReceipt> {
   const body: ReceiptBody = {
     id: crypto.randomUUID(),
@@ -51,6 +53,7 @@ export async function createDecisionReceipt(
     assessment: analysis.assessment,
     decision,
     inferenceSource: analysis.inferenceSource,
+    ...(toolCall && { toolCall }),
   };
 
   return { ...body, digest: await digestBody(body) };

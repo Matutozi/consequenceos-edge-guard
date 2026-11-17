@@ -42,6 +42,12 @@ export interface ReceiptAnalysis {
   inferenceSource: InferenceSource;
 }
 
+/** The exact call an agent asked to run. A receipt authorizes this call and no other. */
+export interface ToolCallRecord {
+  tool: string;
+  args: Record<string, unknown>;
+}
+
 export interface DecisionReceipt {
   id: string;
   createdAt: string;
@@ -50,6 +56,7 @@ export interface DecisionReceipt {
   assessment: RiskAssessment | null;
   decision: GuardDecision;
   inferenceSource: InferenceSource;
+  toolCall?: ToolCallRecord;
   digest: string;
 }
 
