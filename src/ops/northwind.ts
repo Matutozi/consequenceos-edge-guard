@@ -102,7 +102,10 @@ function updateUser(state: NorthwindState, id: string, change: Partial<Northwind
 export const northwindTools: Record<string, ToolImpl<NorthwindState>> = {
   read_ticket(state, { ticketId }) {
     const ticket = findTicket(state, ticketId);
-    return { state, output: `#${ticket.id} "${ticket.subject}" from ${ticket.requester}` };
+    return {
+      state,
+      output: `#${ticket.id} "${ticket.subject}" from ${ticket.requester} (${ticket.status}).\n\n${ticket.body}`,
+    };
   },
   lookup_user(state, { userId }) {
     const user = findUser(state, userId);

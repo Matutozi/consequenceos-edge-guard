@@ -12,7 +12,15 @@ export interface ToolMeta {
   reversible: boolean;
   /** Reads state without changing it. */
   readOnly: boolean;
+  /**
+   * The argument naming where data goes, and what happens when it is outside the
+   * organization's domains. Checked deterministically, before any model call.
+   */
+  egress?: { arg: string; outside: "deny" | "escalate" };
 }
+
+/** Domains that count as inside the organization. */
+export const INTERNAL_DOMAINS = ["northwind.example"];
 
 export type ToolRegistry = Record<string, ToolMeta>;
 
@@ -67,6 +75,7 @@ export const defaultRegistry: ToolRegistry = {
     sensitivity: "internal",
     reversible: false,
     readOnly: false,
+    egress: { arg: "to", outside: "escalate" },
   },
   export_customers: {
     system: "Northwind CRM",
@@ -74,6 +83,7 @@ export const defaultRegistry: ToolRegistry = {
     sensitivity: "restricted",
     reversible: false,
     readOnly: false,
+    egress: { arg: "destination", outside: "deny" },
   },
   delete_audit_logs: {
     system: "Northwind audit trail",
@@ -87,4 +97,23 @@ export const defaultRegistry: ToolRegistry = {
 export function lookupTool(registry: ToolRegistry, tool: string): ToolMeta & { registered: boolean } {
   const meta = Object.hasOwn(registry, tool) ? registry[tool] : undefined;
   return meta ? { ...meta, registered: true } : { ...UNKNOWN_TOOL, registered: false };
+}
+
+/** The destination's domain, or undefined when it cannot be determined. */
+export function destinationDomain(destination: unknown): string | undefined {
+  if (typeof destination !== "string") return undefined;
+  const value = destination.trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  if (at >= 0) return value.slice(at + 1) || undefined;
+  try {
+    return new URL(value).hostname || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** An unparseable destination counts as outside: the rule fails closed. */
+export function isInternalDestination(destination: unknown, domains = INTERNAL_DOMAINS): boolean {
+  const domain = destinationDomain(destination);
+  return !!domain && domains.some((d) => domain === d || domain.endsWith(`.${d}`));
 }

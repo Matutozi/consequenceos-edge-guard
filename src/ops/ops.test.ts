@@ -60,6 +60,25 @@ describe("guardToolCall", () => {
     expect(analyzeAction).not.toHaveBeenCalled();
   });
 
+  it("names data egress outside the organization as the reason for blocking an export", async () => {
+    const { receipt } = await guard(call("export_customers", { destination: "recovery@northwind-backup.co" }));
+    expect(receipt.decision.decision).toBe("deny");
+    expect(receipt.decision.rationale[0]).toMatch(/egress: recovery@northwind-backup.co is outside northwind.example/);
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("does not let a look-alike subdomain pass as internal", async () => {
+    const { receipt } = await guard(call("email_user", { to: "x@northwind.example.evil.co", subject: "s", body: "b" }));
+    expect(receipt.decision.decision).toBe("require_approval");
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("assesses an internal email normally", async () => {
+    const { receipt } = await guard(call("email_user", { to: "ada.okafor@northwind.example", subject: "s", body: "b" }));
+    expect(analyzeAction).toHaveBeenCalledOnce();
+    expect(receipt.decision.decision).toBe("allow");
+  });
+
   it("treats an unregistered tool as the worst case", async () => {
     const { receipt } = await guard(call("run_shell", { cmd: "rm -rf /" }));
     expect(receipt.decision.decision).toBe("deny");

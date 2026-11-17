@@ -35,7 +35,8 @@ export function getFirebaseApp(): FirebaseApp {
   requireEnvironment();
 
   if (import.meta.env.DEV) {
-    self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    // Keep a token that was set before the app loaded (for example, by a test harness).
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN ??= true;
   }
 
   firebaseApp = initializeApp(firebaseConfig);

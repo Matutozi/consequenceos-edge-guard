@@ -48,12 +48,15 @@ export function evaluatePolicy(
     );
   }
 
-  if (["medium", "high"].includes(assessment.riskLevel)) {
-    rationale.push("Non-routine risk requires accountable human approval.");
+  // Escalation depends on structured facts only. The model's own "require_approval"
+  // recommendation is recorded in the receipt but does not decide: otherwise routine
+  // work escalates on vague caution and humans learn to approve without reading.
+  if (assessment.riskLevel === "high") {
+    rationale.push("The risk assessor rated this action high risk.");
   }
 
-  if (!proposal.reversible) {
-    rationale.push("The proposed action cannot be automatically reversed.");
+  if (!proposal.reversible && assessment.riskLevel !== "low") {
+    rationale.push(`The action cannot be undone and was rated ${assessment.riskLevel} risk.`);
   }
 
   if (["confidential", "restricted"].includes(proposal.dataSensitivity)) {
@@ -64,16 +67,16 @@ export function evaluatePolicy(
     rationale.push("The potential blast radius extends beyond a single team.");
   }
 
-  if (assessment.recommendedControl === "require_approval") {
-    rationale.push("The risk assessor recommends human approval.");
-  }
-
   if (rationale.length > 0) {
     return { decision: "require_approval", rationale };
   }
 
   return {
     decision: "allow",
-    rationale: ["Routine, reversible, low-impact action within the configured policy."],
+    rationale: [
+      `Rated ${assessment.riskLevel} risk with ${assessment.blastRadius.replace("_", " ")} impact on ` +
+        `${proposal.dataSensitivity} data${proposal.reversible ? ", and reversible" : ""}: ` +
+        "within policy for automatic execution.",
+    ],
   };
 }

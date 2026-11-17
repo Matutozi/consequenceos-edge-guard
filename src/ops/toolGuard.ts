@@ -2,8 +2,19 @@ import type { AnalyzeOptions } from "../ai/analyzeAction";
 import { guardAction } from "../domain/guard";
 import { evaluateHardRules } from "../domain/policy";
 import { canonicalJson, createDecisionReceipt } from "../domain/receipt";
-import type { ActionProposal, DecisionReceipt, ToolCallRecord } from "../domain/types";
-import { lookupTool, type ToolMeta, type ToolRegistry } from "./registry";
+import type {
+  ActionProposal,
+  DecisionReceipt,
+  GuardDecision,
+  ToolCallRecord,
+} from "../domain/types";
+import {
+  INTERNAL_DOMAINS,
+  isInternalDestination,
+  lookupTool,
+  type ToolMeta,
+  type ToolRegistry,
+} from "./registry";
 import type { Signer } from "./signing";
 
 /** What an agent submits. It never declares sensitivity or reversibility. */
@@ -47,6 +58,19 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
+function evaluateEgress(call: ToolCall, meta: ToolMeta): GuardDecision | undefined {
+  if (!meta.egress) return undefined;
+  const destination = call.args[meta.egress.arg];
+  if (isInternalDestination(destination)) return undefined;
+  const where = `${String(destination)} is outside ${INTERNAL_DOMAINS.join(", ")}`;
+  return meta.egress.outside === "deny"
+    ? { decision: "deny", rationale: [`Blocked data egress: ${where}.`] }
+    : {
+        decision: "require_approval",
+        rationale: [`${where}; sending outside the organization needs human approval.`],
+      };
+}
+
 export interface ToolGuardOptions extends AnalyzeOptions {
   registry: ToolRegistry;
   signer: Signer;
@@ -54,9 +78,10 @@ export interface ToolGuardOptions extends AnalyzeOptions {
 
 /**
  * Edge Guard for agent tool calls. Order of evaluation:
- * 1. Hard rules on registry properties (no model; unknown tools are the worst case).
- * 2. Fast path: read-only access to public or internal data (no model).
- * 3. Risk assessment (Gemini Nano first) and policy.
+ * 1. Egress rule: data leaving the organization's domains (no model).
+ * 2. Hard rules on registry properties (no model; unknown tools are the worst case).
+ * 3. Fast path: read-only access to public or internal data (no model).
+ * 4. Risk assessment (Gemini Nano first) and policy.
  * The resulting receipt is bound to the exact call and signed.
  */
 export async function guardToolCall(
@@ -68,7 +93,8 @@ export async function guardToolCall(
   const record = callRecord(call);
 
   let receipt: DecisionReceipt;
-  const hardDecision = evaluateHardRules(proposal);
+  const egressDecision = evaluateEgress(call, meta);
+  const hardDecision = egressDecision ?? evaluateHardRules(proposal);
   if (hardDecision) {
     if (!meta.registered) {
       hardDecision.rationale.unshift(

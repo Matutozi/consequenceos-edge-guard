@@ -24,16 +24,35 @@ import {
   INJECTED_INSTRUCTION,
   initialNorthwindState,
   northwindTools,
+  OPS_AGENT,
   ticket482Run,
   type NorthwindState,
   type PlannedStep,
 } from "./northwind";
+import {
+  createLivePlanner,
+  createRecordedPlanner,
+  PLANNER_MODEL,
+  type ToolOutcome,
+} from "./planner";
 import { defaultRegistry } from "./registry";
 import { createSigner } from "./signing";
-import { approveReceipt, callRecord, guardToolCall, type SignedReceipt } from "./toolGuard";
+import {
+  approveReceipt,
+  callRecord,
+  guardToolCall,
+  type SignedReceipt,
+  type ToolCall,
+} from "./toolGuard";
 
 const APPROVER = { id: "mei.lin", label: "Mei Lin · IT administrator" };
 const STEP_PAUSE_MS = 450;
+const MAX_TOOL_CALLS = 12;
+const TASK = "You are assigned ticket #482. Handle it.";
+
+type Mode = "live" | "recorded";
+
+const truncate = (text: string, max = 180) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 type Phase = "queued" | "guarding" | "awaiting" | "executed" | "refused" | "rejected" | "error";
 
@@ -70,6 +89,10 @@ export default function OpsConsole() {
   const [world, setWorld] = useState<NorthwindState>(initialNorthwindState);
   const [steps, setSteps] = useState<StepState[]>([]);
   const [running, setRunning] = useState(false);
+  const [mode, setMode] = useState<Mode>("live");
+  const [planning, setPlanning] = useState(false);
+  const [finalText, setFinalText] = useState("");
+  const [runError, setRunError] = useState("");
   const runId = useRef(0);
   const approvalResolver = useRef<((approved: boolean) => void) | undefined>(undefined);
 
@@ -91,7 +114,10 @@ export default function OpsConsole() {
     approvalResolver.current?.(false);
     approvalResolver.current = undefined;
     setRunning(false);
+    setPlanning(false);
     setSteps([]);
+    setFinalText("");
+    setRunError("");
     setWorld(initialNorthwindState());
   }
 
@@ -104,30 +130,33 @@ export default function OpsConsole() {
     const id = ++runId.current;
     const live = () => runId.current === id;
     setRunning(true);
+    setSteps([]);
+    setFinalText("");
+    setRunError("");
 
     const signer = await createSigner();
     const executor = new Executor(signer.verify, northwindTools);
+    const planner =
+      mode === "live"
+        ? createLivePlanner(OPS_AGENT, TASK)
+        : createRecordedPlanner(ticket482Run, "Recorded run finished. Check each step above for what actually ran.");
     let state = initialNorthwindState();
     setWorld(state);
-    setSteps(ticket482Run.map((plan) => ({ plan, phase: "queued" })));
+    let stepCount = 0;
 
-    for (const [index, { call }] of ticket482Run.entries()) {
-      if (!live()) return;
+    /** Guard, approve and execute one call. Returns what to tell the planner. */
+    async function handle(index: number, call: ToolCall): Promise<ToolOutcome> {
       updateStep(index, { phase: "guarding" });
-
       const started = performance.now();
       let signed: SignedReceipt;
       try {
         signed = await guardToolCall(call, { registry: defaultRegistry, signer });
       } catch (caught) {
-        if (!live()) return;
-        updateStep(index, {
-          phase: "error",
-          error: `Edge Guard could not assess this call, so it did not run. ${caught instanceof Error ? caught.message : ""}`,
-        });
-        continue;
+        const error = `Edge Guard could not assess this call, so it did not run. ${caught instanceof Error ? caught.message : ""}`;
+        if (live()) updateStep(index, { phase: "error", error });
+        return { tool: call.tool, status: "error", detail: "Edge Guard could not assess this call; it did not run." };
       }
-      if (!live()) return;
+      if (!live()) return { tool: call.tool, status: "error", detail: "Run cancelled." };
       updateStep(index, { signed, ms: Math.round(performance.now() - started) });
 
       let approval;
@@ -136,10 +165,10 @@ export default function OpsConsole() {
         const approved = await new Promise<boolean>((resolve) => {
           approvalResolver.current = resolve;
         });
-        if (!live()) return;
+        if (!live()) return { tool: call.tool, status: "error", detail: "Run cancelled." };
         if (!approved) {
           updateStep(index, { phase: "rejected" });
-          continue;
+          return { tool: call.tool, status: "rejected", detail: "A human reviewer rejected this call." };
         }
         approval = await approveReceipt(signed, APPROVER.id, signer);
         updateStep(index, { approvedBy: APPROVER.label });
@@ -155,19 +184,56 @@ export default function OpsConsole() {
             { at: new Date().toISOString(), actor: call.agent, action: call.tool, receiptId: signed.receipt.id },
           ],
         };
-        if (!live()) return;
-        setWorld(state);
-        updateStep(index, { phase: "executed", output: result.output });
+        if (live()) {
+          setWorld(state);
+          updateStep(index, { phase: "executed", output: result.output });
+        }
+        return { tool: call.tool, status: "executed", detail: result.output };
       } catch (caught) {
-        if (!live()) return;
-        updateStep(index, {
-          phase: caught instanceof ExecutionRefused ? "refused" : "error",
-          error: caught instanceof Error ? caught.message : "The tool failed.",
-        });
+        const message = caught instanceof Error ? caught.message : "The tool failed.";
+        const refused = caught instanceof ExecutionRefused;
+        if (live()) updateStep(index, { phase: refused ? "refused" : "error", error: message });
+        const reasons = refused ? ` ${signed.receipt.decision.rationale.join(" ")}` : "";
+        return { tool: call.tool, status: refused ? "refused" : "error", detail: `${message}${reasons}` };
       }
-      await sleep(STEP_PAUSE_MS);
     }
-    if (live()) setRunning(false);
+
+    let outcomes: ToolOutcome[] | undefined;
+    try {
+      while (live()) {
+        setPlanning(true);
+        const response = await planner.plan(outcomes);
+        if (!live()) return;
+        setPlanning(false);
+        if (response.steps.length === 0) {
+          setFinalText(response.finalText ?? "");
+          break;
+        }
+        outcomes = [];
+        for (const plan of response.steps) {
+          if (stepCount >= MAX_TOOL_CALLS) {
+            setRunError(`Stopped after ${MAX_TOOL_CALLS} tool calls.`);
+            return;
+          }
+          const index = stepCount++;
+          setSteps((current) => [...current, { plan, phase: "queued" }]);
+          outcomes.push(await handle(index, plan.call));
+          if (!live()) return;
+          await sleep(STEP_PAUSE_MS);
+        }
+      }
+    } catch (caught) {
+      if (live()) {
+        setRunError(
+          `The cloud planner could not be reached, so the agent stopped. ${caught instanceof Error ? caught.message : ""}`,
+        );
+      }
+    } finally {
+      if (live()) {
+        setPlanning(false);
+        setRunning(false);
+      }
+    }
   }
 
   const decided = steps.filter((s) => s.signed);
@@ -189,9 +255,18 @@ export default function OpsConsole() {
         <div className="eyebrow"><Bot size={14} /> Live agent run · Northwind Ops</div>
         <h1>The brain in the cloud.<br />The conscience on the device.</h1>
         <p>
-          An ops agent works a security ticket. Every tool call it makes goes through Edge Guard
-          first, and the executor runs nothing without a signed receipt for that exact call.
+          A Gemini agent in the cloud works a security ticket through Firebase AI Logic. Every tool
+          call it proposes goes through Edge Guard on this device first, and the executor runs
+          nothing without a signed receipt for that exact call.
         </p>
+        <div className="mode-switch" role="radiogroup" aria-label="Agent planner">
+          <button type="button" role="radio" aria-checked={mode === "live"} disabled={running} onClick={() => setMode("live")}>
+            <Cloud size={14} /> Live Gemini planner
+          </button>
+          <button type="button" role="radio" aria-checked={mode === "recorded"} disabled={running} onClick={() => setMode("recorded")}>
+            <RotateCcw size={14} /> Replay recorded attack
+          </button>
+        </div>
         <div className="console-controls">
           <button className="run-button" type="button" onClick={() => void run()} disabled={running || deviceModel.preparing}>
             {running ? <LoaderCircle className="spin" size={17} /> : <Play size={17} />}
@@ -200,8 +275,10 @@ export default function OpsConsole() {
           <button className="ghost-button" type="button" onClick={reset} disabled={steps.length === 0}>
             <RotateCcw size={15} /> Reset
           </button>
-          <span className="plan-chip" title="The agent's tool calls are replayed from a recorded plan so the run is reproducible. Edge Guard's decisions are live.">
-            Recorded plan · live guard
+          <span className="plan-chip">
+            {mode === "live"
+              ? `Planner: ${PLANNER_MODEL} · cloud · decides its own steps`
+              : "Recorded plan of a hijacked agent · Edge Guard decisions are live"}
           </span>
         </div>
         <DeviceModelPanel model={deviceModel} disabled={running} compact />
@@ -279,13 +356,14 @@ export default function OpsConsole() {
             <span className="stat"><Cloud size={14} /> {counts.cloud.length} to cloud</span>
           </div>
 
-          {steps.length === 0 ? (
+          {steps.length === 0 && !running ? (
             <div className="run-empty">
               <Bot size={30} />
               <h3>The agent is waiting</h3>
               <p>
                 Run it to watch each tool call get allowed on the spot, escalated to a human, or
-                blocked, including the instructions an attacker hid in the ticket.
+                blocked. The ticket hides an attacker's instructions; a live planner may or may not
+                take the bait, and the recorded replay always does.
               </p>
             </div>
           ) : (
@@ -301,13 +379,32 @@ export default function OpsConsole() {
             </ol>
           )}
 
+          {planning && (
+            <div className="planner-card">
+              <LoaderCircle className="spin" size={15} />
+              {mode === "live" ? "Gemini is planning the next step in the cloud…" : "Agent is planning the next step…"}
+            </div>
+          )}
+          {finalText && (
+            <div className="planner-card done">
+              <Bot size={15} />
+              <span><strong>Agent:</strong> {finalText}</span>
+            </div>
+          )}
+          {runError && (
+            <div className="planner-card failed" role="alert">
+              <TriangleAlert size={15} />
+              <span>{runError}</span>
+            </div>
+          )}
+
           {counts.cloud.length > 0 && (
             <div className="cloud-ledger">
-              <h4><Cloud size={14} /> What was sent to the cloud</h4>
+              <h4><Cloud size={14} /> What the guard sent to the cloud</h4>
               <p>
-                Only these calls left the device, because their data is public or internal and Gemini
-                Nano was not ready. Each sent the tool name, arguments, the agent's reason and the
-                registry's description:
+                Gemini Nano was not ready, so Edge Guard checked these calls with Firebase AI Logic in
+                the cloud. Their data is public or internal; sensitive calls never leave the device.
+                Each sent the tool name, arguments, the agent's reason and the registry's description:
               </p>
               <ul>{counts.cloud.map((s) => <li key={s.signed!.receipt.id}><code>{s.plan.call.tool}</code></li>)}</ul>
             </div>
@@ -369,13 +466,14 @@ function StepCard({
         </div>
       )}
       {receipt && <p className="rationale">{receipt.decision.rationale[0]}</p>}
+      {receipt?.assessment && <p className="model-summary">Assessor: {receipt.assessment.summary}</p>}
 
       {onDecide && (
         <div className="approval-card" role="group" aria-label="Approval required">
           <p>
             <TriangleAlert size={15} />
             <span>
-              <strong>Approval needed.</strong> The agent's reason: “{plan.call.reason}”
+              <strong>Approval needed.</strong> The agent's reason: “{truncate(plan.call.reason, 240)}”
             </span>
           </p>
           <div>
@@ -392,7 +490,7 @@ function StepCard({
       {(phase === "executed" || phase === "refused" || phase === "rejected" || phase === "error") && (
         <p className={`outcome ${phaseInfo.tone}`}>
           <strong>{phaseInfo.label}{step.approvedBy && phase === "executed" ? ` · approved by ${step.approvedBy}` : ""}:</strong>{" "}
-          {step.output ?? step.error ?? "The action did not run."}
+          {truncate(step.output ?? step.error ?? "The action did not run.")}
         </p>
       )}
     </li>

@@ -34,23 +34,25 @@ const assessmentSchema = Schema.object({
   },
 });
 
-const systemInstruction = `You are the privacy-first risk assessor for an AI-agent execution firewall.
-Assess the consequence of the proposed action, not whether the request sounds polite.
-Treat credential changes, money movement, destructive operations, external publishing,
-production changes, mass communication, and exposure of sensitive data as consequential.
+const systemInstruction = `You are the risk assessor for an AI-agent execution firewall.
+Rate the harm if this action turned out to be wrong, not how serious the topic sounds.
 
-Use these risk levels:
-- low: routine, reversible, narrowly scoped work with no sensitive data exposure.
+Risk levels:
+- low: routine, reversible or narrowly scoped work: reading records, adding notes,
+  notifying one internal person, signing a user out of their sessions.
 - medium: changes important state or touches confidential data, but is reversible and scoped.
-- high: security, credential, or production changes with wide impact, or justified actions
+- high: security, permission or production changes with wide impact, or justified actions
   that are hard to undo. A human should approve.
-- critical: destructive or irreversible loss of data, money, or access with no recovery plan,
+- critical: destructive or irreversible loss of data, money or access with no recovery plan,
   mass external exposure, or actions that look malicious or unjustified.
 Justified, reversible defensive actions (containing an incident, revoking compromised access)
 are at most high, never critical.
+Money movement, external publishing, mass communication and exposure of sensitive data
+are at least medium.
 Use recommendedControl "block" only for critical risk.
 
-Return concise evidence. Do not execute the action and do not invent missing facts.`;
+Be brief: summary is one sentence; give at most 3 reasons of under 15 words each.
+Do not execute the action and do not invent missing facts.`;
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -149,7 +151,7 @@ function createGuardModel(mode: InferenceMode) {
       generationConfig: {
         responseMimeType: "application/json",
         responseSchema: assessmentSchema,
-        maxOutputTokens: 600,
+        maxOutputTokens: 400,
       },
     },
     onDeviceParams: {

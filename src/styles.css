@@ -271,3 +271,15 @@ footer { border-top: 1px solid var(--line); padding: 28px max(24px, calc((100vw 
 @media (max-width: 480px) {
   .brand > span:nth-child(2) { display: none; }
 }
+
+.mode-switch { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin: -8px 0 18px; border: 1px solid var(--line); border-radius: 11px; }
+.mode-switch button { display: flex; align-items: center; gap: 7px; color: var(--muted); background: transparent; border: 0; padding: 8px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+.mode-switch button[aria-checked="true"] { color: var(--ink); background: rgba(82,229,154,.12); box-shadow: inset 0 0 0 1px rgba(82,229,154,.3); }
+.mode-switch button:disabled { cursor: not-allowed; }
+.mode-switch button:disabled:not([aria-checked="true"]) { opacity: .5; }
+.planner-card { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.planner-card svg { flex: none; margin-top: 2px; color: var(--green); }
+.planner-card.done { border-style: solid; color: #b8c8c0; }
+.planner-card.failed { border-color: rgba(255,124,117,.4); color: #ffbcb7; overflow-wrap: anywhere; }
+.planner-card.failed svg { color: var(--red); }
+.model-summary { margin: 4px 0 0; color: #7f978b; font-size: 11.5px; line-height: 1.5; font-style: italic; }

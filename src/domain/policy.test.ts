@@ -25,15 +25,40 @@ describe("evaluatePolicy", () => {
     expect(evaluatePolicy(proposal, assessment).decision).toBe("allow");
   });
 
-  it("requires approval for an irreversible action", () => {
+  it("allows a low-risk irreversible action with narrow impact", () => {
     expect(
       evaluatePolicy({ ...proposal, reversible: false }, assessment).decision,
+    ).toBe("allow");
+  });
+
+  it("requires approval for an irreversible action rated above low", () => {
+    expect(
+      evaluatePolicy({ ...proposal, reversible: false }, { ...assessment, riskLevel: "medium" })
+        .decision,
     ).toBe("require_approval");
   });
 
-  it("requires approval for medium risk even when the model recommends allow", () => {
+  it("allows a reversible medium-risk action on internal data with narrow impact", () => {
     expect(
       evaluatePolicy(proposal, { ...assessment, riskLevel: "medium" }).decision,
+    ).toBe("allow");
+  });
+
+  it("does not escalate only because the model recommends approval", () => {
+    expect(
+      evaluatePolicy(proposal, { ...assessment, recommendedControl: "require_approval" }).decision,
+    ).toBe("allow");
+  });
+
+  it("requires approval for high risk", () => {
+    expect(
+      evaluatePolicy(proposal, { ...assessment, riskLevel: "high" }).decision,
+    ).toBe("require_approval");
+  });
+
+  it("requires approval for organization-wide impact", () => {
+    expect(
+      evaluatePolicy(proposal, { ...assessment, blastRadius: "organization" }).decision,
     ).toBe("require_approval");
   });
 
