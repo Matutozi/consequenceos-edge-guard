@@ -78,4 +78,37 @@ export const receiptLog = {
       fs.setDoc(fs.doc(db, RECEIPTS, doc.receipt.id), { ...doc, loggedAt: fs.serverTimestamp() }),
     );
   },
+
+  /** A receipt as the log holds it, or undefined when there is none with this ID. */
+  async getReceipt(id: string): Promise<LoggedReceipt | undefined> {
+    const { db, fs } = await firestore();
+    const snap = await withTimeout(fs.getDoc(fs.doc(db, RECEIPTS, id)));
+    return snap.exists() ? fromSnapshot(snap.data()) : undefined;
+  },
+
+  async getRun(runId: string): Promise<RunDoc | undefined> {
+    const { db, fs } = await firestore();
+    const snap = await withTimeout(fs.getDoc(fs.doc(db, RUNS, runId)));
+    if (!snap.exists()) return undefined;
+    const data = snap.data();
+    return { agent: data.agent, planner: data.planner, publicKey: data.publicKey };
+  },
+
+  async recent(count = 20): Promise<LoggedReceipt[]> {
+    const { db, fs } = await firestore();
+    const snap = await withTimeout(
+      fs.getDocs(fs.query(fs.collection(db, RECEIPTS), fs.orderBy("loggedAt", "desc"), fs.limit(count))),
+    );
+    return snap.docs.map((d) => fromSnapshot(d.data()));
+  },
 };
+
+export interface LoggedReceipt extends ReceiptDoc {
+  /** When Firestore recorded it, as an ISO string. */
+  loggedAt?: string;
+}
+
+function fromSnapshot(data: Record<string, unknown>): LoggedReceipt {
+  const { loggedAt, ...rest } = data as unknown as ReceiptDoc & { loggedAt?: { toDate(): Date } | null };
+  return { ...(rest as ReceiptDoc), loggedAt: loggedAt?.toDate().toISOString() };
+}

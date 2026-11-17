@@ -535,12 +535,15 @@ function StepCard({
             <span className="source-chip"><SourceIcon size={12} /> {source.label}</span>
           )}
           {step.ms !== undefined && <span className="ms-chip">{step.ms} ms</span>}
-          {step.logged && (
+          {step.logged === "saved" && receipt ? (
+            <a className="ms-chip log-saved" href={`#/verify/${receipt.id}`} title="Verify this receipt from the Firestore audit log">
+              <Database size={11} /> logged · verify
+            </a>
+          ) : step.logged ? (
             <span className={`ms-chip log-${step.logged}`} title="Append-only audit log in Cloud Firestore">
-              <Database size={11} />{" "}
-              {step.logged === "saved" ? "logged" : step.logged === "pending" ? "logging…" : "not logged"}
+              <Database size={11} /> {step.logged === "pending" ? "logging…" : "not logged"}
             </span>
-          )}
+          ) : null}
         </div>
       )}
       {receipt && <p className="rationale">{receipt.decision.rationale[0]}</p>}

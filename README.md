@@ -66,6 +66,11 @@ delete the audit logs.
    Firestore**. Security rules (`firestore.rules`) make the log append-only and App
    Check is enforced, so receipts cannot be edited or deleted from the client. Each
    run stores its public key, so any receipt can be verified from the log alone.
+7. **Verify.** The **Verify** tab (`#/verify/<receipt-id>`, linked from every logged
+   step) reads a receipt from Firestore and checks its digest, its signature against
+   the run's public key, the call it is bound to, any approval, and whether the
+   outcome is consistent with the decision. **Tamper with it** changes one field in a
+   local copy to show what the checks catch; nothing is written.
 
 > Trust boundary, stated plainly: the planner, guard and executor run in the same
 > page here, so the signature proves the executor checks Edge Guard's receipts, not
@@ -206,11 +211,13 @@ copied from the pre-existing ConsequenceOS repository.
 
 ## Roadmap
 
-- Receipt verification page that checks any logged receipt against its run's key
 - Evaluation set of guarded actions, including injection attempts, with on-device
   and cloud pass rates
 - Signer in a separate trust boundary, with approvers who sign in
-- ConsequenceOS gateway integration for real MCP tool calls
+- ConsequenceOS integration: Edge Guard as the on-device first line in front of the
+  ConsequenceOS MCP gateway, passing its assessment as an advisory fact that can
+  raise a call's consequence score but never lower it; ConsequenceOS keeps policy,
+  approvals, Ed25519 + ML-DSA receipts and its hash-chained audit log
 - Sensitive-field minimization before cloud assessment
 
 See [docs/SUBMISSION_CHECKLIST.md](docs/SUBMISSION_CHECKLIST.md) for the remaining
