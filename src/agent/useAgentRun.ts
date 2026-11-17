@@ -5,6 +5,7 @@ import {
   northwindTools,
   OPS_AGENT,
   ticket482Run,
+  type HelpdeskTicket,
   type NorthwindState,
   type PlannedStep,
 } from "../ops/northwind";
@@ -53,7 +54,8 @@ export interface AgentRun {
   runErrorDetail: string;
   registry?: LoadedRegistry;
   auditError: string;
-  run(options: { mode: PlannerMode; ticketId: number }): Promise<void>;
+  /** Runs the agent on one ticket; the helpdesk holds every ticket in the queue. */
+  run(options: { mode: PlannerMode; ticketNumber: number; queue: HelpdeskTicket[] }): Promise<void>;
   reset(): void;
   /** Answers the step that is waiting for approval. */
   decide(approved: boolean): void;
@@ -117,7 +119,7 @@ export function useAgentRun(): AgentRun {
   }, []);
 
   const run = useCallback(
-    async ({ mode, ticketId }: { mode: PlannerMode; ticketId: number }) => {
+    async ({ mode, ticketNumber, queue }: { mode: PlannerMode; ticketNumber: number; queue: HelpdeskTicket[] }) => {
       const id = ++runId.current;
       const live = () => runId.current === id;
       setRunning(true);
@@ -152,9 +154,9 @@ export function useAgentRun(): AgentRun {
       const executor = new Executor(signer.verify, northwindTools);
       const planner =
         mode === "live"
-          ? createLivePlanner(OPS_AGENT, `You are assigned ticket #${ticketId}. Handle it.`)
+          ? createLivePlanner(OPS_AGENT, `You are assigned ticket #${ticketNumber}. Handle it.`)
           : createRecordedPlanner(ticket482Run, "Recorded run finished. Each step shows what actually ran.");
-      let state = initialNorthwindState();
+      let state = initialNorthwindState(queue);
       setWorld(state);
       let stepCount = 0;
 

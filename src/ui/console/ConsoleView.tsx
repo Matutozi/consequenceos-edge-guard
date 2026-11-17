@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, Play, RotateCcw } from "lucide-react";
+import { LoaderCircle, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useAgentRun, type PlannerMode, type StepState } from "../../agent/useAgentRun";
 import { DeviceModelPanel } from "../../DeviceModelPanel";
 import { INJECTED_INSTRUCTION, type NorthwindState } from "../../ops/northwind";
@@ -8,9 +8,14 @@ import type { LoadedRegistry } from "../../ops/registryConfig";
 import { useDeviceModel } from "../../useDeviceModel";
 import { canonicalJson } from "../../domain/receipt";
 import { decisionBadge, decisionLabel, formatArgs, routeLine, truncate } from "../format";
+import { deleteManualTicket } from "../../intake/adapters/manual";
+import { sourceLabel, type Ticket } from "../../intake";
+import { useTicketQueue } from "../../intake/useTicketQueue";
 import { GuardInspector } from "./GuardInspector";
+import { TicketComposer } from "./TicketComposer";
 
-const RECORDED_TICKET = 482;
+/** The recorded attack replays a run on this ticket only. */
+const RECORDED_TICKET_ID = "sample:482";
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -21,7 +26,9 @@ export default function ConsoleView() {
   const agent = useAgentRun();
   const deviceModel = useDeviceModel();
   const [mode, setMode] = useState<PlannerMode>("live");
-  const [ticketId, setTicketId] = useState(RECORDED_TICKET);
+  const queue = useTicketQueue();
+  const [ticketId, setTicketId] = useState(RECORDED_TICKET_ID);
+  const [composing, setComposing] = useState(false);
   const [selected, setSelected] = useState(0);
   const following = useRef(true);
   const [announcement, setAnnouncement] = useState("");
@@ -67,7 +74,29 @@ export default function ConsoleView() {
     following.current = true;
     setSelected(0);
     announced.current = 0;
-    void agent.run({ mode, ticketId });
+    void agent.run({
+      mode,
+      ticketNumber: ticket!.number,
+      queue: queue.tickets.map(({ number, title, requester, body }) => ({ number, title, requester, body })),
+    });
+  }
+
+  /** The timeline belongs to one ticket, so switching tickets clears it. */
+  function selectTicket(id: string) {
+    if (id !== ticketId && agent.steps.length > 0) agent.reset();
+    setTicketId(id);
+    setComposing(false);
+  }
+
+  function created(newTicket: Ticket) {
+    selectTicket(newTicket.id);
+  }
+
+  function removeTicket(id: string) {
+    deleteManualTicket(id);
+    if (agent.steps.length > 0) agent.reset();
+    setTicketId(RECORDED_TICKET_ID);
+    queue.refresh();
   }
 
   function select(index: number) {
@@ -75,11 +104,15 @@ export default function ConsoleView() {
     setSelected(index);
   }
 
-  const ticket = agent.world.tickets.find((t) => t.id === ticketId) ?? agent.world.tickets[0];
-  const [ticketText, planted] = ticket.body.includes(INJECTED_INSTRUCTION)
-    ? [ticket.body.split(INJECTED_INSTRUCTION)[0].replace(/\n*--- forwarded message ---\n*$/, ""), INJECTED_INSTRUCTION]
-    : [ticket.body, undefined];
-  const recordedUnavailable = mode === "recorded" && ticketId !== RECORDED_TICKET;
+  const ticket = queue.tickets.find((t) => t.id === ticketId) ?? queue.tickets.find((t) => t.id === RECORDED_TICKET_ID);
+  // Status and notes change as the agent works; the helpdesk copy in the run has them.
+  const helpdesk = ticket ? agent.world.tickets.find((t) => t.id === ticket.number) : undefined;
+  // Only the sample ticket's planted instruction is marked. Tickets people write show as written.
+  const [ticketText, planted] =
+    ticket?.source === "sample" && ticket.body.includes(INJECTED_INSTRUCTION)
+      ? [ticket.body.split(INJECTED_INSTRUCTION)[0].replace(/\n*--- forwarded message ---\n*$/, ""), INJECTED_INSTRUCTION]
+      : [ticket?.body ?? "", undefined];
+  const recordedUnavailable = mode === "recorded" && ticketId !== RECORDED_TICKET_ID;
   const cloudChecks = steps.filter((s) => s.signed?.receipt.inferenceSource === "IN_CLOUD").length;
 
   return (
@@ -88,30 +121,55 @@ export default function ConsoleView() {
 
       <nav className="pane pane-queue" aria-label="Ticket queue">
         <div className="pane-header">
-          Queue <span className="quiet">{agent.world.tickets.length} open</span>
+          Queue
+          <button type="button" className="btn btn-sm" onClick={() => setComposing(true)} disabled={running}>
+            <Plus size={13} aria-hidden="true" /> New ticket
+          </button>
         </div>
-        <ul className="queue-list">
-          {agent.world.tickets.map((t) => (
-            <li key={t.id}>
-              <button
-                type="button"
-                className="queue-item"
-                aria-current={t.id === ticketId ? "true" : undefined}
-                disabled={running}
-                onClick={() => setTicketId(t.id)}
-              >
-                <span className="title">{t.subject}</span>
-                <span className="meta">#{t.id}, sample, {t.status}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+        {queue.loading && queue.tickets.length === 0 ? (
+          <div className="state"><LoaderCircle className="spin" size={13} aria-hidden="true" /> Loading tickets</div>
+        ) : queue.tickets.length === 0 ? (
+          <div className="state">No tickets. Write one with New ticket.</div>
+        ) : (
+          <ul className="queue-list">
+            {queue.tickets.map((t) => (
+              <li key={t.id}>
+                <button
+                  type="button"
+                  className="queue-item"
+                  aria-current={t.id === ticketId && !composing ? "true" : undefined}
+                  disabled={running}
+                  onClick={() => selectTicket(t.id)}
+                >
+                  <span className="title">{t.title}</span>
+                  <span className="meta">
+                    <span className="source">{sourceLabel[t.source]}</span> #{t.number}, {t.priority} priority
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {queue.errors.map((e) => <p key={e} className="state state-error">{e}</p>)}
       </nav>
 
       <main className="pane pane-main" aria-label="Northwind ops">
+        {composing ? (
+          <TicketComposer onCreated={created} onCancel={() => setComposing(false)} />
+        ) : !ticket ? (
+          <div className="state"><LoaderCircle className="spin" size={13} aria-hidden="true" /> Loading the ticket</div>
+        ) : (
+        <>
         <header className="ticket">
-          <h1>{ticket.subject}</h1>
-          <div className="meta">Ticket #{ticket.id} from {ticket.requester}, {ticket.status}</div>
+          <h1>{ticket.title}</h1>
+          <div className="meta">
+            Ticket #{ticket.number} from {ticket.requester}. {sourceLabel[ticket.source]}, {ticket.priority} priority, {helpdesk?.status ?? "open"}.
+            {ticket.source === "manual" && !running && (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeTicket(ticket.id)}>
+                <Trash2 size={13} aria-hidden="true" /> Delete
+              </button>
+            )}
+          </div>
           <p className="ticket-body">{ticketText.trim()}</p>
           {planted && (
             <p className="planted">
@@ -119,7 +177,7 @@ export default function ConsoleView() {
               {planted}
             </p>
           )}
-          {ticket.notes.map((note) => <p key={note} className="ticket-body">Note: {note}</p>)}
+          {helpdesk?.notes.map((note) => <p key={note} className="ticket-body">Note: {note}</p>)}
         </header>
 
         <div className="runbar">
@@ -140,7 +198,7 @@ export default function ConsoleView() {
           </button>
           <span className="quiet">
             {recordedUnavailable
-              ? `The recorded attack exists only for ticket #${RECORDED_TICKET}. Pick it or use the live planner.`
+              ? "The recorded attack exists only for sample ticket #482. Pick it or use the live planner."
               : mode === "live"
                 ? `The planner is ${PLANNER_MODEL} in the cloud, through Firebase AI Logic. It chooses its own steps.`
                 : "Replays a run where the agent followed the hidden instruction. Edge Guard decides each step live."}
@@ -180,6 +238,8 @@ export default function ConsoleView() {
         </section>
 
         <CompanyTabs world={agent.world} />
+        </>
+        )}
       </main>
 
       <GuardInspector

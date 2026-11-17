@@ -307,3 +307,16 @@ dl.facts dd { margin: 0; overflow-wrap: anywhere; }
 .topbar-end a.quiet { text-decoration: none; }
 .topbar-end a.quiet:hover { color: var(--text); text-decoration: underline; }
 @media (max-width: 900px) { .topbar-end a.quiet { display: none; } }
+
+/* Ticket intake */
+.queue-item .meta .source { color: var(--text-2); font-weight: 500; }
+.ticket .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.composer { padding: 16px 24px 24px; display: grid; gap: 12px; max-width: 760px; }
+.composer-head h1 { margin: 0; font-size: 20px; line-height: 28px; font-weight: 600; }
+.composer-head .quiet { margin: 4px 0 8px; }
+@media (max-width: 760px) { .composer { padding-left: 16px; padding-right: 16px; } }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+.card-body { min-width: 0; }
+.code-block { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); font: 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
+table.data tr[aria-current="true"] td { background: var(--surface-2); }
+@media (max-width: 760px) { .nav a { padding: 6px 6px; font-size: 12px; } }

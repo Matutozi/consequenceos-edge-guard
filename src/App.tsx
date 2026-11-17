@@ -3,15 +3,22 @@ import { Moon, ShieldCheck, Sun } from "lucide-react";
 import ActionInspector from "./ActionInspector";
 import ConsoleView from "./ui/console/ConsoleView";
 import { applyTheme, storedTheme, type Theme } from "./ui/theme";
+import IntegrationsPage from "./ui/integrations/IntegrationsPage";
 import VerifyPage from "./verify/VerifyPage";
 
-type Route = { view: "console" } | { view: "inspector" } | { view: "verify"; receiptId?: string };
+type Route =
+  | { view: "console" }
+  | { view: "inspector" }
+  | { view: "verify"; receiptId?: string }
+  | { view: "integrations"; sourceId?: string };
 
 function routeFromHash(): Route {
   const hash = window.location.hash;
   if (hash === "#/inspector") return { view: "inspector" };
   const verify = /^#\/verify(?:\/([^/]+))?$/.exec(hash);
   if (verify) return { view: "verify", receiptId: verify[1] && decodeURIComponent(verify[1]) };
+  const integrations = /^#\/integrations(?:\/([^/]+))?$/.exec(hash);
+  if (integrations) return { view: "integrations", sourceId: integrations[1] && decodeURIComponent(integrations[1]) };
   return { view: "console" };
 }
 
@@ -34,6 +41,7 @@ export default function App() {
     ["console", "#/console", "Console"],
     ["inspector", "#/inspector", "Single action"],
     ["verify", "#/verify", "Verify"],
+    ["integrations", "#/integrations", "Integrations"],
   ];
 
   return (
@@ -69,6 +77,8 @@ export default function App() {
           <ConsoleView />
         ) : route.view === "verify" ? (
           <VerifyPage receiptId={route.receiptId} />
+        ) : route.view === "integrations" ? (
+          <IntegrationsPage sourceId={route.sourceId} />
         ) : (
           <ActionInspector />
         )}
