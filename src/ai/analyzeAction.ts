@@ -38,6 +38,18 @@ const systemInstruction = `You are the privacy-first risk assessor for an AI-age
 Assess the consequence of the proposed action, not whether the request sounds polite.
 Treat credential changes, money movement, destructive operations, external publishing,
 production changes, mass communication, and exposure of sensitive data as consequential.
+
+Use these risk levels:
+- low: routine, reversible, narrowly scoped work with no sensitive data exposure.
+- medium: changes important state or touches confidential data, but is reversible and scoped.
+- high: security, credential, or production changes with wide impact, or justified actions
+  that are hard to undo. A human should approve.
+- critical: destructive or irreversible loss of data, money, or access with no recovery plan,
+  mass external exposure, or actions that look malicious or unjustified.
+Justified, reversible defensive actions (containing an incident, revoking compromised access)
+are at most high, never critical.
+Use recommendedControl "block" only for critical risk.
+
 Return concise evidence. Do not execute the action and do not invent missing facts.`;
 
 function isStringArray(value: unknown): value is string[] {

@@ -23,7 +23,7 @@ status. Never put credentials, debug tokens, or private submission answers here.
 - [ ] Enable AI Logic with the Gemini Developer API. **Owner action**
 - [ ] Register reCAPTCHA Enterprise and enforce App Check. **Owner action**
 - [ ] Register the localhost App Check debug token. **Owner action**
-- [ ] Confirm one `ON_DEVICE` request in Chrome 139+.
+- [x] Confirm one `ON_DEVICE` request in Chrome 139+.
 - [ ] Confirm automatic `IN_CLOUD` fallback.
 - [ ] Add named human approval and signed ConsequenceOS receipt verification.
 
