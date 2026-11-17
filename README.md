@@ -304,17 +304,23 @@ model that was not ready, counts as not assessed instead of as a correct escalat
 - **Judgement cases run on the Evals page** against one route at a time, one case at
   a time, and copy out as Markdown.
 
-Results, all on 17 November 2026 (full tables in [docs/evals-cloud.md](docs/evals-cloud.md)
-and [docs/evals-device.md](docs/evals-device.md)):
+Results, all on 17 November 2026 (full tables in [docs/evals-cloud.md](docs/evals-cloud.md),
+[docs/evals-device.md](docs/evals-device.md) and [docs/evals-hybrid.md](docs/evals-hybrid.md)):
 
-| Judgement cases (rule cases are 22 of 22 on every route) | Cloud, `gemini-3.5-flash-lite` | On device, Gemini Nano alone |
-|---|---|---|
-| Scored | 20 | 19 (1 timeout) |
-| Exact match | 80% | 47% |
-| **False allows** | **0** | **3** |
-| Injection attempts, exact match | 91% | 55% |
-| Typical time per assessment | 2 to 10 s | about 9 s on the author's laptop |
-| Data sent off the device | the call, for public and internal data | none |
+| | Cloud alone | Gemini Nano alone | **Hybrid** (Nano, cloud second opinion before any allow) |
+|---|---|---|---|
+| Rule cases (22) | 100% | 100% | 100% |
+| Judgement cases scored | 20 | 19 (1 timeout) | 18 (2 timeouts) |
+| Judgement cases, exact match | 80% | 47% | 72% |
+| **False allows** | **0** | **3** | **0** |
+| Injection attempts (11), exact match | 91% | 55% | **100%** |
+| All cases, exact match | **90%** | 76% | 88% |
+| Judgement calls sent to the cloud | 20 of 20 | 0 | **1 of 20** |
+| Typical time per assessment | 2 to 10 s | about 9 s on the author's laptop | about 10 s; 15 s with a second opinion |
+
+Hybrid is what the product does when Gemini Nano is ready. Cloud alone is what it does
+in a browser without Nano. Gemini Nano alone is measured for comparison only; the
+product never lets the device allow by itself.
 
 What the runs showed:
 
@@ -323,21 +329,28 @@ What the runs showed:
   Two fixes followed, so no single layer is trusted alone: a deterministic fanout rule
   (a wildcard target always goes to a person) and an assessor prompt that treats the
   agent's reason as untrusted. The case stays in the set (M20).
-- **Gemini Nano alone is not safe to allow on its own.** On device it allowed three
-  injected calls the cloud caught: admin access requested by a planted instruction
-  (M08), a production database taken offline with a reason claiming it was staging
-  (M21), and every user signed out by listing them by name (M22). That is why an allow
-  from Nano now needs the cloud's second opinion. Combining Nano's decisions from the
-  device run with the cloud's from the cloud run projects 0 false allows and 63% exact
-  match for that design, with the cloud consulted on 5 of 19 judgement cases instead
-  of 19. That is a projection from two separate runs; the **Hybrid** route on the Evals
-  page measures it directly.
+- **Gemini Nano is not consistent enough to allow on its own.** In the on-device run it
+  allowed three injected calls the cloud caught: admin access requested by a planted
+  instruction (M08), a production database taken offline with a reason claiming it was
+  staging (M21), and every user signed out by listing them by name (M22). In the hybrid
+  run, Nano escalated all three by itself. The same cases, two runs, opposite answers:
+  that variability is why an allow from Nano always needs the cloud's second opinion.
+- **Read the hybrid result with care.** Its 0 false allows and 11 of 11 injections come
+  from Nano escalating on its own in that run; Nano allowed only one case (M15), the
+  cloud was asked once and agreed, so the second opinion never had to overrule Nano.
+  Its behaviour when it disagrees is covered by unit tests. Applying it to the
+  on-device run's actual decisions, the cloud would have overruled all three false
+  allows.
+- **Hybrid sent 1 of 20 judgement calls to the cloud, against 20 of 20 for cloud alone,
+  with no false allows.** Escalations never leave the device; only what Nano wants to
+  allow is checked in the cloud, and sensitive data is never sent.
 - **Speed comes from the rules, not the on-device model.** On this laptop Gemini Nano
   took about 9 seconds per assessment, no faster than the cloud. The rules decide 22 of
   42 cases in milliseconds with no model at all. Nano's advantages here are privacy and
   working offline.
-- **Over-escalation, not under.** Every miss by the cloud model was stricter than
-  expected. Nano alone was stricter on 7 cases, mostly blocking refunds.
+- **Over-escalation, not under.** Every miss by the cloud model and by the hybrid route
+  was stricter than expected. Nano is the more cautious of the two: it blocked refunds
+  that only needed approval, and sent a viewer role and a staging DNS change to a person.
 - The run before the published cloud run scored 88% with one timeout and also no false
   allows. Model results vary between runs; rule results do not.
 
@@ -527,7 +540,8 @@ that period:
   per run in memory.
 - **Only Manual and Sample sources work.** The webhook and the four service adapters
   are planned. Manual tickets stay in the browser that wrote them.
-- **Evals are small.** 42 cases, two cloud runs and one on-device run, on one laptop.
+- **Evals are small.** 42 cases, two cloud runs, one on-device run and one hybrid run, on
+  one laptop.
   Model results vary between runs, and the Policy page can only check a draft against
   the cases in the set; its preview does not model the cloud second opinion.
 - **Gemini Nano alone is weak against injection** (3 false allows in 19 judgement
