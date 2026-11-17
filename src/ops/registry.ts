@@ -13,6 +13,11 @@ export interface ToolMeta {
   /** Reads state without changing it. */
   readOnly: boolean;
   /**
+   * Changes state, but so little that a model call adds nothing: with reversible and
+   * public or internal data, the call is allowed by rule.
+   */
+  lowImpact?: boolean;
+  /**
    * The argument naming where data goes, and what happens when it is outside the
    * organization's domains. Checked deterministically, before any model call.
    */
@@ -68,6 +73,7 @@ export const defaultRegistry: ToolRegistry = {
     sensitivity: "internal",
     reversible: true,
     readOnly: false,
+    lowImpact: true,
   },
   email_user: {
     system: "Northwind outbox",

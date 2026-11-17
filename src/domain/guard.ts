@@ -1,9 +1,10 @@
 import {
   analyzeAction,
+  AssessorTimeoutError,
   OnDeviceUnavailableError,
   type AnalyzeOptions,
 } from "../ai/analyzeAction";
-import { escalateUnassessed, evaluateHardRules, evaluatePolicy } from "./policy";
+import { escalateTimedOut, escalateUnassessed, evaluateHardRules, evaluatePolicy } from "./policy";
 import { createDecisionReceipt } from "./receipt";
 import type { ActionProposal, DecisionReceipt, ToolCallRecord } from "./types";
 
@@ -11,8 +12,8 @@ const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
 /**
  * The full control path: hard rules first (no model needed), then risk analysis and
- * policy. Every outcome produces a receipt; an action that must stay on device but
- * cannot be assessed fails closed to human approval instead of erroring.
+ * policy. Every outcome produces a receipt. An action that must stay on device but
+ * cannot be assessed, or whose assessment times out, fails closed to human approval.
  */
 export async function guardAction(
   proposal: ActionProposal,
@@ -33,6 +34,14 @@ export async function guardAction(
   } catch (error) {
     if (error instanceof OnDeviceUnavailableError) {
       return createDecisionReceipt(proposal, noModel, escalateUnassessed(proposal), toolCall);
+    }
+    if (error instanceof AssessorTimeoutError) {
+      return createDecisionReceipt(
+        proposal,
+        { assessment: null, inferenceSource: "TIMED_OUT" },
+        escalateTimedOut(error.ms),
+        toolCall,
+      );
     }
     throw error;
   }

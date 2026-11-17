@@ -320,3 +320,6 @@ dl.facts dd { margin: 0; overflow-wrap: anywhere; }
 .code-block { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); font: 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
 table.data tr[aria-current="true"] td { background: var(--surface-2); }
 @media (max-width: 760px) { .nav a { padding: 6px 6px; font-size: 12px; } }
+label.btn { cursor: pointer; }
+label.btn:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+textarea.mono { font-family: var(--mono); font-size: 12px; }

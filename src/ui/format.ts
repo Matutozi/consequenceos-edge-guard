@@ -25,7 +25,9 @@ export function routeLine(source: InferenceSource, ms?: number): string {
         ? "Cloud"
         : source === "NONE"
           ? "Rule, no model call"
-          : "Model, source unknown";
+          : source === "TIMED_OUT"
+            ? "Assessor timed out"
+            : "Model, source unknown";
   return ms === undefined ? where : `${where}, ${duration(ms)}`;
 }
 

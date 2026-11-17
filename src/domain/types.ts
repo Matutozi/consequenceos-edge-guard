@@ -28,8 +28,11 @@ export interface GuardDecision {
   rationale: string[];
 }
 
-/** `NONE`: no model was called; the decision came from deterministic policy alone. */
-export type InferenceSource = "ON_DEVICE" | "IN_CLOUD" | "UNKNOWN" | "NONE";
+/**
+ * `NONE`: no model was called; the decision came from deterministic policy alone.
+ * `TIMED_OUT`: a model was asked but did not answer in time, so the request was aborted.
+ */
+export type InferenceSource = "ON_DEVICE" | "IN_CLOUD" | "UNKNOWN" | "NONE" | "TIMED_OUT";
 
 export interface AnalysisResult {
   assessment: RiskAssessment;

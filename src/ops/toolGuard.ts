@@ -58,6 +58,11 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
+function isFastPath(meta: ToolMeta): boolean {
+  const lowSensitivity = meta.sensitivity === "public" || meta.sensitivity === "internal";
+  return lowSensitivity && meta.reversible && (meta.readOnly || meta.lowImpact === true);
+}
+
 function evaluateEgress(call: ToolCall, meta: ToolMeta, domains: string[]): GuardDecision | undefined {
   if (!meta.egress) return undefined;
   const destination = call.args[meta.egress.arg];
@@ -81,7 +86,8 @@ export interface ToolGuardOptions extends AnalyzeOptions {
  * Edge Guard for agent tool calls. Order of evaluation:
  * 1. Egress rule: data leaving the organization's domains (no model).
  * 2. Hard rules on registry properties (no model; unknown tools are the worst case).
- * 3. Fast path: read-only access to public or internal data (no model).
+ * 3. Fast path: reads, and low-impact changes that can be undone, on public or
+ *    internal data (no model). Model calls are kept for real judgement.
  * 4. Risk assessment (Gemini Nano first) and policy.
  * The resulting receipt is bound to the exact call and signed.
  */
@@ -103,14 +109,17 @@ export async function guardToolCall(
       );
     }
     receipt = await createDecisionReceipt(proposal, noModel, hardDecision, record);
-  } else if (meta.readOnly && ["public", "internal"].includes(meta.sensitivity)) {
+  } else if (isFastPath(meta)) {
     receipt = await createDecisionReceipt(
       proposal,
       noModel,
       {
         decision: "allow",
         rationale: [
-          `${call.tool} only reads ${meta.sensitivity} data. Allowed by rule, with no model call.`,
+          meta.readOnly
+            ? `${call.tool} only reads ${meta.sensitivity} data. Allowed by rule, with no model call.`
+            : `${call.tool} is low impact in the registry, can be undone and touches ${meta.sensitivity} data. ` +
+              "Allowed by rule, with no model call.",
         ],
       },
       record,

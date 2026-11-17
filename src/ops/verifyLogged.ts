@@ -6,7 +6,7 @@ import { approvalMessage, receiptMessage } from "./toolGuard";
 export type CheckStatus = "pass" | "fail" | "not-applicable";
 
 export interface Check {
-  id: "digest" | "signature" | "binding" | "approval" | "outcome";
+  id: "origin" | "log-copy" | "digest" | "signature" | "binding" | "approval" | "outcome";
   label: string;
   status: CheckStatus;
   detail: string;
@@ -106,3 +106,101 @@ export async function checkLoggedReceipt(doc: ReceiptDoc, run: RunDoc | undefine
 }
 
 export const allPassed = (checks: Check[]) => checks.every((c) => c.status !== "fail");
+
+export interface PastedCheck {
+  /** "signed": a console receipt with a signature. "digest-only": a single-action receipt. */
+  kind: "signed" | "digest-only";
+  checks: Check[];
+  receipt: ReceiptDoc["receipt"];
+}
+
+/** Reads from the audit log. Each may reject, for example when Firestore is unreachable. */
+export interface AuditLookup {
+  run(runId: string): Promise<RunDoc | undefined>;
+  receipt(id: string): Promise<ReceiptDoc | undefined>;
+}
+
+const sameKey = (a: JsonWebKey, b: JsonWebKey) => a.kty === b.kty && a.crv === b.crv && a.x === b.x && a.y === b.y;
+
+/**
+ * Checks a receipt someone pasted or uploaded. A signature proves origin only when
+ * the key comes from the audit log: a key inside the file proves nothing, since
+ * anyone can generate a key pair and sign a forged receipt with it.
+ */
+export async function checkPastedReceipt(text: string, lookup: AuditLookup): Promise<PastedCheck> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("That is not valid JSON.");
+  }
+  const value = (parsed ?? {}) as Record<string, unknown>;
+
+  // A single-action receipt: digest only, no signature.
+  if (typeof value.digest === "string" && value.proposal && !value.signature) {
+    const receipt = value as unknown as ReceiptDoc["receipt"];
+    const digestOk = await verifyReceipt(receipt);
+    return {
+      kind: "digest-only",
+      receipt,
+      checks: [
+        {
+          id: "digest",
+          label: "Contents match the digest",
+          status: digestOk ? "pass" : "fail",
+          detail: digestOk
+            ? "SHA-256 over the receipt's canonical JSON matches its digest."
+            : "The receipt was changed: its contents no longer match its digest.",
+        },
+        {
+          id: "signature",
+          label: "Signature",
+          status: "not-applicable",
+          detail:
+            "This receipt is not signed. Receipts from the single action view carry a digest, which catches " +
+            "accidental edits but not deliberate ones: anyone can change the contents and recompute it.",
+        },
+      ],
+    };
+  }
+
+  if (!value.receipt || typeof value.signature !== "string" || typeof value.runId !== "string") {
+    throw new Error("This doesn't look like an Edge Guard receipt: it needs receipt, signature and runId fields.");
+  }
+  const doc = value as unknown as ReceiptDoc & { publicKey?: JsonWebKey };
+  const fileKey = doc.publicKey;
+
+  let loggedRun: RunDoc | undefined;
+  let loggedCopy: ReceiptDoc | undefined;
+  let lookupError = "";
+  try {
+    [loggedRun, loggedCopy] = await Promise.all([lookup.run(doc.runId), lookup.receipt(doc.receipt.id)]);
+  } catch (caught) {
+    lookupError = caught instanceof Error ? caught.message : "The audit log could not be read.";
+  }
+
+  const origin: Check = loggedRun
+    ? fileKey && !sameKey(fileKey, loggedRun.publicKey)
+      ? { id: "origin", label: "Key comes from the audit log", status: "fail", detail: "The public key in the file is not the one this run recorded in the audit log. Checked against the logged key instead." }
+      : { id: "origin", label: "Key comes from the audit log", status: "pass", detail: "Checked against the public key this run recorded in the audit log, not a key from the file." }
+    : {
+        id: "origin",
+        label: "Key comes from the audit log",
+        status: "fail",
+        detail:
+          (lookupError ? `The audit log could not be read (${lookupError}). ` : "This run is not in the audit log. ") +
+          (fileKey
+            ? "The signature was checked against the key inside the file, which anyone could have generated, so it proves nothing about who issued the receipt."
+            : "There is no key to check the signature against."),
+      };
+
+  const logCopy: Check = loggedCopy
+    ? loggedCopy.receipt.digest === doc.receipt.digest && loggedCopy.signature === doc.signature
+      ? { id: "log-copy", label: "Matches the audit log copy", status: "pass", detail: "The audit log holds the same receipt and signature." }
+      : { id: "log-copy", label: "Matches the audit log copy", status: "fail", detail: "The audit log holds a different version of this receipt." }
+    : { id: "log-copy", label: "Matches the audit log copy", status: lookupError ? "not-applicable" : "fail", detail: lookupError ? "The audit log could not be read." : "No receipt with this ID is in the audit log." };
+
+  const key = loggedRun?.publicKey ?? fileKey;
+  const checks = await checkLoggedReceipt(doc, key ? { agent: "", planner: "live", publicKey: key } : undefined);
+  return { kind: "signed", receipt: doc.receipt, checks: [origin, logCopy, ...checks] };
+}

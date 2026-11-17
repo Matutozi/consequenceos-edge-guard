@@ -27,7 +27,7 @@ vi.mock("firebase/ai", () => ({
   },
 }));
 
-const { analyzeAction, getDeviceModelStatus, OnDeviceUnavailableError } = await import(
+const { analyzeAction, AssessorTimeoutError, getDeviceModelStatus, OnDeviceUnavailableError } = await import(
   "./analyzeAction"
 );
 
@@ -115,6 +115,22 @@ describe("analyzeAction privacy routing", () => {
   it("discards a sensitive result that did not run on device", async () => {
     (globalThis as { LanguageModel?: unknown }).LanguageModel = readyModel();
     await expect(analyzeAction(confidential)).rejects.toThrow(/unexpectedly processed outside/);
+  });
+});
+
+describe("assessor timeout", () => {
+  it("aborts a model call that does not answer in time", async () => {
+    sdk.generateContent.mockReturnValue(new Promise(() => {}));
+    const error = await analyzeAction(internal, { timeoutMs: 30 }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AssessorTimeoutError);
+    expect((error as InstanceType<typeof AssessorTimeoutError>).ms).toBe(30);
+    expect(sdk.generateContent.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
+  it("reports a timeout on device as a timeout, not as an unavailable model", async () => {
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = readyModel();
+    sdk.generateContent.mockReturnValue(new Promise(() => {}));
+    await expect(analyzeAction(confidential, { timeoutMs: 30 })).rejects.toBeInstanceOf(AssessorTimeoutError);
   });
 });
 

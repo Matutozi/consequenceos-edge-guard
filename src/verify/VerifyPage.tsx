@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   CircleCheck,
   CircleMinus,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { canonicalJson } from "../domain/receipt";
 import { receiptLog, type LoggedReceipt, type RunDoc } from "../ops/receiptLog";
-import { allPassed, checkLoggedReceipt, type Check } from "../ops/verifyLogged";
+import { allPassed, checkLoggedReceipt, checkPastedReceipt, type Check, type PastedCheck } from "../ops/verifyLogged";
 import { decisionBadge, decisionLabel, routeLine } from "../ui/format";
 
 interface Loaded {
@@ -245,6 +245,106 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
           )}
         </section>
       </div>
+
+      <PasteVerify />
     </div>
+  );
+}
+
+function CheckList({ checks }: { checks: Check[] }) {
+  return (
+    <ul className="checks">
+      {checks.map((check) => (
+        <li key={check.id} className={check.status}>
+          {check.status === "pass" ? (
+            <CircleCheck size={16} aria-label="Passed" />
+          ) : check.status === "fail" ? (
+            <CircleX size={16} aria-label="Failed" />
+          ) : (
+            <CircleMinus size={16} aria-label="Not applicable" />
+          )}
+          <span>{check.label}<small>{check.detail}</small></span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const auditLookup = {
+  run: (runId: string) => receiptLog.getRun(runId),
+  receipt: (id: string) => receiptLog.getReceipt(id),
+};
+
+/** Checks a receipt file someone pasted or uploaded, against the audit log where it can. */
+function PasteVerify() {
+  const [text, setText] = useState("");
+  const [result, setResult] = useState<PastedCheck>();
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  async function check(source = text) {
+    setChecking(true);
+    setError("");
+    setResult(undefined);
+    try {
+      setResult(await checkPastedReceipt(source, auditLookup));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The receipt could not be checked.");
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function upload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 512 * 1024) {
+      setError("That file is larger than 512 KB, which is too big for a receipt.");
+      return;
+    }
+    const content = await file.text();
+    setText(content);
+    void check(content);
+  }
+
+  const passed = result ? allPassed(result.checks) : undefined;
+
+  return (
+    <section className="card" style={{ marginTop: 16 }} aria-label="Check a receipt file">
+      <div className="card-header">Check a receipt file</div>
+      <div className="card-body">
+        <p style={{ margin: 0, fontSize: 13 }} className="muted">
+          Paste a receipt's JSON or upload the file, for example one downloaded above or from the single
+          action view. A signature only proves where a receipt came from when the key comes from the audit
+          log, so a key inside the file is never trusted on its own.
+        </p>
+        <label className="field">
+          Receipt JSON
+          <textarea rows={6} className="mono" value={text} onChange={(e) => { setText(e.target.value); setResult(undefined); setError(""); }} />
+        </label>
+        <div className="presets">
+          <button type="button" className="btn btn-primary btn-sm" disabled={!text.trim() || checking} onClick={() => void check()}>
+            {checking && <LoaderCircle className="spin" size={13} aria-hidden="true" />} Check
+          </button>
+          <label className="btn btn-sm">
+            Upload a file
+            <input type="file" accept="application/json,.json" className="visually-hidden" onChange={(e) => void upload(e)} />
+          </label>
+        </div>
+        {error && <div className="notice notice-error" role="alert">{error}</div>}
+        {result && (
+          <div aria-live="polite">
+            <p className={`verdict ${passed ? "ok" : "bad"}`} style={{ margin: "0 0 8px" }}>
+              {passed ? <ShieldCheck size={16} aria-hidden="true" /> : <ShieldX size={16} aria-hidden="true" />}
+              {result.kind === "digest-only"
+                ? passed ? "Digest matches. Not signed." : "Changed after it was issued"
+                : passed ? "Verified against the audit log" : "Not verified"}
+            </p>
+            <CheckList checks={result.checks} />
+          </div>
+        )}
+      </div>
+    </section>
   );
 }

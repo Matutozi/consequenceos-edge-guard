@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateHardRules, evaluatePolicy } from "./policy";
+import { escalateTimedOut, evaluateHardRules, evaluatePolicy } from "./policy";
 import type { ActionProposal, RiskAssessment } from "./types";
 
 const proposal: ActionProposal = {
@@ -112,6 +112,19 @@ describe("evaluatePolicy", () => {
       evaluateHardRules({ ...proposal, reversible: false, dataSensitivity: "restricted" })
         ?.decision,
     ).toBe("deny");
+  });
+
+  it("allows a reversible, low-impact defensive action rated low risk", () => {
+    const defensive = { ...proposal, action: "revoke_sessions({\"userId\":\"ada.okafor\"})", reversible: true };
+    const result = evaluatePolicy(defensive, { ...assessment, summary: "Routine containment" });
+    expect(result.decision).toBe("allow");
+    expect(result.rationale[0]).toMatch(/one person/);
+  });
+
+  it("escalates a timed-out assessment, naming the deadline", () => {
+    const result = escalateTimedOut(20_000);
+    expect(result.decision).toBe("require_approval");
+    expect(result.rationale[0]).toMatch(/20 s/);
   });
 
   it("denies a critical action", () => {

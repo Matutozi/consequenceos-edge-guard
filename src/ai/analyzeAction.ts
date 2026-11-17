@@ -90,6 +90,8 @@ export interface AnalyzeOptions {
   onDownloadProgress?: (progress: number) => void;
   /** Explicit user consent to send confidential or restricted proposals to the cloud. */
   allowCloudForSensitive?: boolean;
+  /** Milliseconds before the call fails closed. Defaults to ASSESSOR_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
 
 /**
@@ -99,6 +101,34 @@ export interface AnalyzeOptions {
  */
 function hasOnDeviceApi(): boolean {
   return typeof (globalThis as { LanguageModel?: unknown }).LanguageModel !== "undefined";
+}
+
+/** How long the assessor may take before the call fails closed to a person. */
+export const ASSESSOR_TIMEOUT_MS = 20_000;
+
+/** Thrown when the assessor does not answer in time. The request is aborted. */
+export class AssessorTimeoutError extends Error {
+  constructor(readonly ms: number) {
+    super(`The assessor did not answer within ${ms / 1000} s.`);
+    this.name = "AssessorTimeoutError";
+  }
+}
+
+/** Runs one model call with a deadline, aborting the request when it passes. */
+async function withDeadline<T>(ms: number, call: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new AssessorTimeoutError(ms));
+    }, ms);
+  });
+  try {
+    return await Promise.race([call(controller.signal), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Thrown when a proposal must stay on device but the on-device model cannot run. */
@@ -183,7 +213,7 @@ export async function prepareDeviceModel(
 
 export async function analyzeAction(
   proposal: ActionProposal,
-  { onDownloadProgress, allowCloudForSensitive = false }: AnalyzeOptions = {},
+  { onDownloadProgress, allowCloudForSensitive = false, timeoutMs = ASSESSOR_TIMEOUT_MS }: AnalyzeOptions = {},
 ): Promise<AnalysisResult> {
   const onDeviceOnly = isSensitive(proposal) && !allowCloudForSensitive;
 
@@ -207,15 +237,16 @@ export async function analyzeAction(
     // Wait for the local model; there is no cloud path to fall back to.
     try {
       await deviceModelReady;
-      result = await model.generateContent(buildPrompt(proposal));
+      result = await withDeadline(timeoutMs, (signal) => model.generateContent(buildPrompt(proposal), { signal }));
     } catch (cause) {
+      if (cause instanceof AssessorTimeoutError) throw cause;
       // With an on-device adapter present, the SDK throws here before any cloud call.
       throw new OnDeviceUnavailableError(proposal, cause);
     }
   } else {
     // PREFER_ON_DEVICE intentionally lets generateContent use cloud fallback.
     deviceModelReady.catch(() => {});
-    result = await model.generateContent(buildPrompt(proposal));
+    result = await withDeadline(timeoutMs, (signal) => model.generateContent(buildPrompt(proposal), { signal }));
   }
 
   // The SDK reports "on_device" / "in_cloud"; map them to the receipt's own values.

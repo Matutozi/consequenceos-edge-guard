@@ -8,7 +8,7 @@ vi.mock("../ai/analyzeAction", async (importOriginal) => ({
   analyzeAction,
 }));
 
-const { OnDeviceUnavailableError } = await import("../ai/analyzeAction");
+const { AssessorTimeoutError, OnDeviceUnavailableError } = await import("../ai/analyzeAction");
 const { guardAction } = await import("./guard");
 const { verifyReceipt } = await import("./receipt");
 
@@ -51,6 +51,16 @@ describe("guardAction", () => {
     expect(receipt.decision.rationale.join(" ")).toMatch(/nothing left the device/);
     expect(receipt.inferenceSource).toBe("NONE");
     expect(receipt.assessment).toBeNull();
+  });
+
+  it("fails closed to approval when the assessor times out", async () => {
+    analyzeAction.mockRejectedValue(new AssessorTimeoutError(20_000));
+    const receipt = await guardAction(routine);
+    expect(receipt.decision.decision).toBe("require_approval");
+    expect(receipt.inferenceSource).toBe("TIMED_OUT");
+    expect(receipt.assessment).toBeNull();
+    expect(receipt.decision.rationale[0]).toMatch(/did not answer within 20 s/);
+    expect(await verifyReceipt(receipt)).toBe(true);
   });
 
   it("applies policy to a model assessment", async () => {

@@ -39,6 +39,10 @@ function parseToolMeta(value: unknown): ToolMeta | undefined {
     reversible: v.reversible,
     readOnly: v.readOnly,
   };
+  if (v.lowImpact !== undefined) {
+    if (typeof v.lowImpact !== "boolean") return undefined;
+    meta.lowImpact = v.lowImpact;
+  }
   if (v.egress !== undefined) {
     const egress = v.egress as Record<string, unknown> | null;
     if (

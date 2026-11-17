@@ -33,6 +33,17 @@ export function escalateUnassessed(proposal: ActionProposal): GuardDecision {
   };
 }
 
+/** The fail-closed decision when the assessor does not answer in time. */
+export function escalateTimedOut(ms: number): GuardDecision {
+  return {
+    decision: "require_approval",
+    rationale: [
+      `The assessor did not answer within ${ms / 1000} s, so the call was not assessed.`,
+      "A person has to approve it.",
+    ],
+  };
+}
+
 export function evaluatePolicy(
   proposal: ActionProposal,
   assessment: RiskAssessment,

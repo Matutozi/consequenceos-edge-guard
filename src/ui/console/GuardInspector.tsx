@@ -101,7 +101,9 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
               ? "Sent to Firebase AI Logic: the tool name, its arguments, the agent's reason and the registry description. Nothing else from the ticket."
               : receipt.inferenceSource === "ON_DEVICE"
                 ? "Assessed by Gemini Nano. Nothing left this device."
-                : "Decided by rule. No model saw this call."}
+                : receipt.inferenceSource === "TIMED_OUT"
+                  ? "The assessor did not answer in time and the request was cancelled. Edge Guard failed closed and sent the call to a person."
+                  : "Decided by rule. No model saw this call."}
           </p>
         </section>
       )}
@@ -123,6 +125,7 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
               <dt>Data</dt><dd>{meta.sensitivity}</dd>
               <dt>Can be undone</dt><dd>{yesNo(meta.reversible)}</dd>
               <dt>Read only</dt><dd>{yesNo(meta.readOnly)}</dd>
+              {meta.lowImpact && (<><dt>Low impact</dt><dd>Yes, allowed by rule when it can be undone</dd></>)}
               {meta.egress && (
                 <>
                   <dt>Outside domains</dt>

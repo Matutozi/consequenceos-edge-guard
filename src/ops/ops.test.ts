@@ -54,6 +54,20 @@ describe("guardToolCall", () => {
     expect(analyzeAction).not.toHaveBeenCalled();
   });
 
+  it("allows a low-impact, reversible internal change by rule without a model call", async () => {
+    const { receipt } = await guard(call("add_ticket_note", { ticketId: 482, note: "Done" }));
+    expect(receipt.decision.decision).toBe("allow");
+    expect(receipt.inferenceSource).toBe("NONE");
+    expect(receipt.decision.rationale[0]).toMatch(/add_ticket_note is low impact/);
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("does not fast-path a low-impact tool that cannot be undone", async () => {
+    const registry = { ...defaultRegistry, add_ticket_note: { ...defaultRegistry.add_ticket_note, reversible: false } };
+    await guardToolCall(call("add_ticket_note", { ticketId: 482, note: "x" }), { registry, signer });
+    expect(analyzeAction).toHaveBeenCalledOnce();
+  });
+
   it("denies restricted irreversible tools by hard rule without a model call", async () => {
     const { receipt } = await guard(call("delete_audit_logs", { scope: "all" }));
     expect(receipt.decision.decision).toBe("deny");
