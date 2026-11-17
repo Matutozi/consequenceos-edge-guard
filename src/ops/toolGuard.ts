@@ -58,11 +58,11 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
-function evaluateEgress(call: ToolCall, meta: ToolMeta): GuardDecision | undefined {
+function evaluateEgress(call: ToolCall, meta: ToolMeta, domains: string[]): GuardDecision | undefined {
   if (!meta.egress) return undefined;
   const destination = call.args[meta.egress.arg];
-  if (isInternalDestination(destination)) return undefined;
-  const where = `${String(destination)} is outside ${INTERNAL_DOMAINS.join(", ")}`;
+  if (isInternalDestination(destination, domains)) return undefined;
+  const where = `${String(destination)} is outside ${domains.join(", ")}`;
   return meta.egress.outside === "deny"
     ? { decision: "deny", rationale: [`Blocked data egress: ${where}.`] }
     : {
@@ -74,6 +74,8 @@ function evaluateEgress(call: ToolCall, meta: ToolMeta): GuardDecision | undefin
 export interface ToolGuardOptions extends AnalyzeOptions {
   registry: ToolRegistry;
   signer: Signer;
+  /** Domains inside the organization, for the egress rule. */
+  internalDomains?: string[];
 }
 
 /**
@@ -86,14 +88,14 @@ export interface ToolGuardOptions extends AnalyzeOptions {
  */
 export async function guardToolCall(
   call: ToolCall,
-  { registry, signer, ...analyzeOptions }: ToolGuardOptions,
+  { registry, signer, internalDomains = INTERNAL_DOMAINS, ...analyzeOptions }: ToolGuardOptions,
 ): Promise<SignedReceipt> {
   const meta = lookupTool(registry, call.tool);
   const proposal = toProposal(call, meta);
   const record = callRecord(call);
 
   let receipt: DecisionReceipt;
-  const egressDecision = evaluateEgress(call, meta);
+  const egressDecision = evaluateEgress(call, meta, internalDomains);
   const hardDecision = egressDecision ?? evaluateHardRules(proposal);
   if (hardDecision) {
     if (!meta.registered) {

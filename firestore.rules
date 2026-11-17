@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// Edge Guard audit log. Append-only: documents can be created and read, never changed
+// or deleted. App Check should be enforced for Cloud Firestore so only this app can write.
+//
+// Limit: without user sign-in, anyone with a valid App Check token can append a run
+// with their own key. Verification proves a receipt matches the key its run recorded,
+// not who ran it.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /runs/{runId} {
+      allow read: if true;
+      allow create: if runId.matches('^[0-9a-f-]{36}$')
+        && request.resource.data.keys().hasOnly(['agent', 'planner', 'publicKey', 'createdAt'])
+        && request.resource.data.agent is string
+        && request.resource.data.agent.size() <= 64
+        && request.resource.data.planner in ['live', 'recorded']
+        && request.resource.data.publicKey is map
+        && request.resource.data.publicKey.kty == 'EC'
+        && request.resource.data.publicKey.crv == 'P-256'
+        && !('d' in request.resource.data.publicKey)
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /receipts/{receiptId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(
+            ['runId', 'receipt', 'signature', 'approval', 'outcome', 'loggedAt'])
+        && exists(/databases/$(database)/documents/runs/$(request.resource.data.runId))
+        && request.resource.data.receipt is map
+        && request.resource.data.receipt.id == receiptId
+        && request.resource.data.receipt.digest is string
+        && request.resource.data.receipt.digest.matches('^[0-9a-f]{64}$')
+        && request.resource.data.signature is string
+        && request.resource.data.signature.matches('^[0-9a-f]{128}$')
+        && (request.resource.data.approval == null || request.resource.data.approval is map)
+        && request.resource.data.outcome in ['executed', 'refused', 'rejected', 'error']
+        && request.resource.data.loggedAt == request.time;
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

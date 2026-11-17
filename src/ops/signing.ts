@@ -12,6 +12,22 @@ export const SIGNATURE_ALGORITHM = "ecdsa-p256-sha256";
 export interface Signer {
   sign(message: string): Promise<string>;
   verify(message: string, signature: string): Promise<boolean>;
+  /** The public half, so anyone can verify receipts later. The private key never leaves. */
+  publicKeyJwk(): Promise<JsonWebKey>;
+}
+
+/** Verifies a signature against an exported public key, for example one read from the audit log. */
+export async function verifyWithPublicKey(
+  jwk: JsonWebKey,
+  message: string,
+  signature: string,
+): Promise<boolean> {
+  try {
+    const key = await crypto.subtle.importKey("jwk", jwk, keyParams, false, ["verify"]);
+    return await crypto.subtle.verify(signParams, key, fromHex(signature), new TextEncoder().encode(message));
+  } catch {
+    return false;
+  }
 }
 
 const keyParams = { name: "ECDSA", namedCurve: "P-256" } as const;
@@ -43,6 +59,9 @@ export async function createSigner(): Promise<Signer> {
       } catch {
         return false;
       }
+    },
+    async publicKeyJwk() {
+      return crypto.subtle.exportKey("jwk", publicKey);
     },
   };
 }

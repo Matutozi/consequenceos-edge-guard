@@ -283,3 +283,8 @@ footer { border-top: 1px solid var(--line); padding: 28px max(24px, calc((100vw 
 .planner-card.failed { border-color: rgba(255,124,117,.4); color: #ffbcb7; overflow-wrap: anywhere; }
 .planner-card.failed svg { color: var(--red); }
 .model-summary { margin: 4px 0 0; color: #7f978b; font-size: 11.5px; line-height: 1.5; font-style: italic; }
+.infra-status { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; color: var(--muted); font-size: 11.5px; }
+.infra-status span { display: flex; align-items: center; gap: 6px; }
+.infra-status svg { color: var(--green); }
+.ms-chip.log-saved { color: var(--green); }
+.ms-chip.log-failed { color: var(--red); }

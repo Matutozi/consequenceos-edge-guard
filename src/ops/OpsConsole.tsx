@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Bot,
   Check,
+  Database,
   Cloud,
   Cpu,
   FileWarning,
@@ -12,6 +13,7 @@ import {
   Play,
   RotateCcw,
   ScrollText,
+  Settings2,
   TriangleAlert,
   Users,
   X,
@@ -35,12 +37,14 @@ import {
   PLANNER_MODEL,
   type ToolOutcome,
 } from "./planner";
-import { defaultRegistry } from "./registry";
+import { receiptLog, toReceiptDoc, type StepOutcome } from "./receiptLog";
+import { loadToolRegistry, type LoadedRegistry } from "./registryConfig";
 import { createSigner } from "./signing";
 import {
   approveReceipt,
   callRecord,
   guardToolCall,
+  type Approval,
   type SignedReceipt,
   type ToolCall,
 } from "./toolGuard";
@@ -64,6 +68,7 @@ interface StepState {
   output?: string;
   error?: string;
   approvedBy?: string;
+  logged?: "pending" | "saved" | "failed";
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -93,8 +98,16 @@ export default function OpsConsole() {
   const [planning, setPlanning] = useState(false);
   const [finalText, setFinalText] = useState("");
   const [runError, setRunError] = useState("");
+  const [registryInfo, setRegistryInfo] = useState<LoadedRegistry>();
+  const [auditError, setAuditError] = useState("");
+  const registryLoad = useRef<Promise<LoadedRegistry> | undefined>(undefined);
   const runId = useRef(0);
   const approvalResolver = useRef<((approved: boolean) => void) | undefined>(undefined);
+
+  useEffect(() => {
+    registryLoad.current ??= loadToolRegistry();
+    void registryLoad.current.then(setRegistryInfo);
+  }, []);
 
   // Stop an in-flight run when the console unmounts.
   useEffect(
@@ -133,8 +146,29 @@ export default function OpsConsole() {
     setSteps([]);
     setFinalText("");
     setRunError("");
+    setAuditError("");
 
     const signer = await createSigner();
+    const loaded = await (registryLoad.current ??= loadToolRegistry());
+    setRegistryInfo(loaded);
+    const runUuid = crypto.randomUUID();
+    const runLogged = signer
+      .publicKeyJwk()
+      .then((publicKey) => receiptLog.startRun(runUuid, { agent: OPS_AGENT, planner: mode, publicKey }));
+    runLogged.catch((caught: unknown) => {
+      if (live()) setAuditError(caught instanceof Error ? caught.message : "Firestore is unavailable.");
+    });
+
+    /** Appends the receipt and its outcome to the Firestore audit log, without blocking the run. */
+    function logStep(index: number, signed: SignedReceipt, approval: Approval | undefined, outcome: StepOutcome) {
+      updateStep(index, { logged: "pending" });
+      runLogged
+        .then(() => receiptLog.record(toReceiptDoc(runUuid, signed, approval, outcome)))
+        .then(
+          () => live() && updateStep(index, { logged: "saved" }),
+          () => live() && updateStep(index, { logged: "failed" }),
+        );
+    }
     const executor = new Executor(signer.verify, northwindTools);
     const planner =
       mode === "live"
@@ -150,7 +184,11 @@ export default function OpsConsole() {
       const started = performance.now();
       let signed: SignedReceipt;
       try {
-        signed = await guardToolCall(call, { registry: defaultRegistry, signer });
+        signed = await guardToolCall(call, {
+          registry: loaded.registry,
+          internalDomains: loaded.internalDomains,
+          signer,
+        });
       } catch (caught) {
         const error = `Edge Guard could not assess this call, so it did not run. ${caught instanceof Error ? caught.message : ""}`;
         if (live()) updateStep(index, { phase: "error", error });
@@ -159,16 +197,26 @@ export default function OpsConsole() {
       if (!live()) return { tool: call.tool, status: "error", detail: "Run cancelled." };
       updateStep(index, { signed, ms: Math.round(performance.now() - started) });
 
-      let approval;
+      const { outcome, approval } = await approveAndExecute(index, call, signed);
+      if (live()) logStep(index, signed, approval, outcome.status);
+      return outcome;
+    }
+
+    async function approveAndExecute(
+      index: number,
+      call: ToolCall,
+      signed: SignedReceipt,
+    ): Promise<{ outcome: ToolOutcome; approval?: Approval }> {
+      let approval: Approval | undefined;
       if (signed.receipt.decision.decision === "require_approval") {
         updateStep(index, { phase: "awaiting" });
         const approved = await new Promise<boolean>((resolve) => {
           approvalResolver.current = resolve;
         });
-        if (!live()) return { tool: call.tool, status: "error", detail: "Run cancelled." };
+        if (!live()) return { outcome: { tool: call.tool, status: "error", detail: "Run cancelled." } };
         if (!approved) {
           updateStep(index, { phase: "rejected" });
-          return { tool: call.tool, status: "rejected", detail: "A human reviewer rejected this call." };
+          return { outcome: { tool: call.tool, status: "rejected", detail: "A human reviewer rejected this call." } };
         }
         approval = await approveReceipt(signed, APPROVER.id, signer);
         updateStep(index, { approvedBy: APPROVER.label });
@@ -188,13 +236,16 @@ export default function OpsConsole() {
           setWorld(state);
           updateStep(index, { phase: "executed", output: result.output });
         }
-        return { tool: call.tool, status: "executed", detail: result.output };
+        return { outcome: { tool: call.tool, status: "executed", detail: result.output }, approval };
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : "The tool failed.";
         const refused = caught instanceof ExecutionRefused;
         if (live()) updateStep(index, { phase: refused ? "refused" : "error", error: message });
         const reasons = refused ? ` ${signed.receipt.decision.rationale.join(" ")}` : "";
-        return { tool: call.tool, status: refused ? "refused" : "error", detail: `${message}${reasons}` };
+        return {
+          outcome: { tool: call.tool, status: refused ? "refused" : "error", detail: `${message}${reasons}` },
+          approval,
+        };
       }
     }
 
@@ -245,6 +296,7 @@ export default function OpsConsole() {
     device: decided.filter((s) => s.signed!.receipt.inferenceSource === "ON_DEVICE").length,
     policy: decided.filter((s) => s.signed!.receipt.inferenceSource === "NONE").length,
   };
+  const loggedCount = steps.filter((s) => s.logged === "saved").length;
   const ticket = world.tickets[0];
   const [ticketText] = ticket.body.split(INJECTED_INSTRUCTION);
   const finished = steps.length > 0 && !running;
@@ -282,6 +334,26 @@ export default function OpsConsole() {
           </span>
         </div>
         <DeviceModelPanel model={deviceModel} disabled={running} compact />
+        <div className="infra-status">
+          <span title={registryInfo?.fallbackReason}>
+            <Settings2 size={13} />
+            Tool registry:{" "}
+            {!registryInfo
+              ? "loading…"
+              : registryInfo.source === "remote-config"
+                ? `Firebase Remote Config · ${Object.keys(registryInfo.registry).length} tools${registryInfo.rejected.length ? ` · ${registryInfo.rejected.length} rejected` : ""}`
+                : registryInfo.fallbackReason?.includes("no tool_registry")
+                  ? "bundled defaults (not published to Remote Config yet)"
+                  : "bundled defaults (Remote Config unreachable)"}
+          </span>
+          <span title={auditError || undefined}>
+            <Database size={13} />
+            Audit log:{" "}
+            {auditError
+              ? "not recording (Firestore unavailable)"
+              : `Cloud Firestore${loggedCount ? ` · ${loggedCount} receipts this run` : ""}`}
+          </span>
+        </div>
       </section>
 
       <section className="console-grid">
@@ -463,6 +535,12 @@ function StepCard({
             <span className="source-chip"><SourceIcon size={12} /> {source.label}</span>
           )}
           {step.ms !== undefined && <span className="ms-chip">{step.ms} ms</span>}
+          {step.logged && (
+            <span className={`ms-chip log-${step.logged}`} title="Append-only audit log in Cloud Firestore">
+              <Database size={11} />{" "}
+              {step.logged === "saved" ? "logged" : step.logged === "pending" ? "logging…" : "not logged"}
+            </span>
+          )}
         </div>
       )}
       {receipt && <p className="rationale">{receipt.decision.rationale[0]}</p>}
