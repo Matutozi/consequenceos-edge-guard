@@ -90,11 +90,35 @@ export interface AnalyzeOptions {
   allowCloudForSensitive?: boolean;
 }
 
+/**
+ * The Firebase SDK only creates its on-device adapter when the browser exposes
+ * `LanguageModel`. Without it, the SDK sends every request to the cloud and
+ * silently ignores ONLY_ON_DEVICE, so we check for it ourselves first.
+ */
+function hasOnDeviceApi(): boolean {
+  return typeof (globalThis as { LanguageModel?: unknown }).LanguageModel !== "undefined";
+}
+
+function onDeviceUnavailableError(proposal: ActionProposal, cause?: unknown): Error {
+  return new Error(
+    `Gemini Nano is not available on this device, so this ${proposal.dataSensitivity} ` +
+      "proposal was not analyzed and nothing was sent to the cloud. Enable the on-device " +
+      "model or explicitly allow cloud analysis for sensitive data.",
+    { cause },
+  );
+}
+
 export async function analyzeAction(
   proposal: ActionProposal,
   { onDownloadProgress, allowCloudForSensitive = false }: AnalyzeOptions = {},
 ): Promise<AnalysisResult> {
   const onDeviceOnly = isSensitive(proposal) && !allowCloudForSensitive;
+
+  // Must run before any Firebase call: see hasOnDeviceApi.
+  if (onDeviceOnly && !hasOnDeviceApi()) {
+    throw onDeviceUnavailableError(proposal);
+  }
+
   const ai = getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });
   const model = getGenerativeModel(ai, {
     mode: onDeviceOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
@@ -130,12 +154,8 @@ export async function analyzeAction(
       await deviceModelReady;
       result = await model.generateContent(buildPrompt(proposal));
     } catch (cause) {
-      throw new Error(
-        `Gemini Nano is not available on this device, so this ${proposal.dataSensitivity} ` +
-          "proposal was not analyzed and nothing was sent to the cloud. Enable the on-device " +
-          "model or explicitly allow cloud analysis for sensitive data.",
-        { cause },
-      );
+      // With an on-device adapter present, the SDK throws here before any cloud call.
+      throw onDeviceUnavailableError(proposal, cause);
     }
   } else {
     // PREFER_ON_DEVICE intentionally lets generateContent use cloud fallback.
@@ -153,8 +173,12 @@ export async function analyzeAction(
         : "UNKNOWN";
 
   if (onDeviceOnly && inferenceSource !== "ON_DEVICE") {
-    // Defense in depth: never accept a non-local result the user did not consent to.
-    throw new Error("Sensitive proposal was not analyzed on device; result discarded.");
+    // Defense in depth: should be unreachable. If it fires, the request already
+    // left the device, so say so honestly and discard the result.
+    throw new Error(
+      "This sensitive proposal was unexpectedly processed outside the device. The result " +
+        "was discarded. Please report this as a bug.",
+    );
   }
 
   let parsed: unknown;
