@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  approvalStore,
+  requestDoc,
+  toApproval,
+  trustedApprovers,
+  verifyResponse,
+  type ApprovalResponseDoc,
+  type ApproverDoc,
+} from "../ops/approvals";
 import { ExecutionRefused, Executor } from "../ops/executor";
+import { lookupTool } from "../ops/registry";
 import {
   initialNorthwindState,
   northwindTools,
@@ -14,6 +24,7 @@ import { receiptLog, toReceiptDoc, type StepOutcome } from "../ops/receiptLog";
 import { loadToolRegistry, type LoadedRegistry } from "../ops/registryConfig";
 import { createSigner } from "../ops/signing";
 import {
+  approvalMessage,
   approveReceipt,
   callRecord,
   guardToolCall,
@@ -42,6 +53,12 @@ export interface StepState {
   errorDetail?: string;
   approvedBy?: string;
   logged?: "pending" | "saved" | "failed";
+  /** The approval request on Mei Lin's phone, when a paired phone is trusted. */
+  phone?: {
+    status: "sending" | "sent" | "failed" | "answered" | "ignored";
+    detail?: string;
+    explanation?: ApprovalResponseDoc["explanation"];
+  };
 }
 
 export interface AgentRun {
@@ -151,7 +168,37 @@ export function useAgentRun(): AgentRun {
           );
       }
 
-      const executor = new Executor(signer.verify, northwindTools);
+      // Phones paired and trusted in this browser. An answer from any other key is ignored.
+      const trusted = trustedApprovers();
+      const approverCache = new Map<string, Promise<ApproverDoc | undefined>>();
+      const trustedApprover = (keyId: string) => {
+        if (!trusted.includes(keyId)) return Promise.resolve(undefined);
+        if (!approverCache.has(keyId)) approverCache.set(keyId, approvalStore.getApprover(keyId).catch(() => undefined));
+        return approverCache.get(keyId)!;
+      };
+
+      const executor = new Executor(signer.verify, northwindTools, async (receipt, approval) => {
+        if (!approval.keyId) {
+          return signer.verify(approvalMessage(receipt, approval.approvedBy, approval.approvedAt), approval.signature);
+        }
+        const approver = await trustedApprover(approval.keyId);
+        return (
+          !!approver &&
+          verifyResponse(
+            receipt,
+            {
+              receiptId: approval.receiptId,
+              decision: "approve",
+              approverId: approval.approvedBy,
+              keyId: approval.keyId,
+              decidedAt: approval.approvedAt,
+              signature: approval.signature,
+              explanation: null,
+            },
+            approver,
+          )
+        );
+      });
       const planner =
         mode === "live"
           ? createLivePlanner(OPS_AGENT, `You are assigned ticket #${ticketNumber}. Handle it.`)
@@ -198,16 +245,57 @@ export function useAgentRun(): AgentRun {
         let approval: Approval | undefined;
         if (signed.receipt.decision.decision === "require_approval") {
           updateStep(index, { phase: "awaiting" });
-          const approved = await new Promise<boolean>((resolve) => {
-            approvalResolver.current = resolve;
+          type Answer = { approved: boolean; response?: ApprovalResponseDoc };
+          let stopListening: (() => void) | undefined;
+          const answer = await new Promise<Answer>((resolve) => {
+            approvalResolver.current = (approved) => resolve({ approved });
+            if (trusted.length === 0) return;
+            // Also ask Mei Lin's phone; whichever answers first decides.
+            updateStep(index, { phone: { status: "sending" } });
+            approvalStore
+              .request(requestDoc(runUuid, call, lookupTool(loaded.registry, call.tool), signed))
+              .then(() => {
+                if (live()) updateStep(index, { phone: { status: "sent" } });
+                return approvalStore.onResponse(signed.receipt.id, (response) => {
+                  void trustedApprover(response.keyId).then(async (approver) => {
+                    if (approver && (await verifyResponse(signed.receipt, response, approver))) {
+                      resolve({ approved: response.decision === "approve", response });
+                    } else if (live()) {
+                      updateStep(index, {
+                        phone: { status: "ignored", detail: "An answer arrived that is not signed by a paired phone. It was ignored." },
+                      });
+                    }
+                  });
+                });
+              })
+              .then((unsubscribe) => {
+                stopListening = unsubscribe;
+              })
+              .catch((caught: unknown) => {
+                if (live()) {
+                  updateStep(index, {
+                    phone: { status: "failed", detail: caught instanceof Error ? caught.message : "The request could not be sent." },
+                  });
+                }
+              });
           });
+          stopListening?.();
+          approvalResolver.current = undefined;
           if (!live()) return { outcome: { tool: call.tool, status: "error", detail: "Run cancelled." } };
-          if (!approved) {
-            updateStep(index, { phase: "rejected" });
+          if (answer.response) {
+            updateStep(index, { phone: { status: "answered", explanation: answer.response.explanation } });
+          }
+          if (!answer.approved) {
+            updateStep(index, { phase: "rejected", approvedBy: answer.response ? `${APPROVER.name}, on her phone` : undefined });
             return { outcome: { tool: call.tool, status: "rejected", detail: "A human reviewer rejected this call." } };
           }
-          approval = await approveReceipt(signed, APPROVER.id, signer);
-          updateStep(index, { approvedBy: `${APPROVER.name}, ${APPROVER.role}` });
+          if (answer.response) {
+            approval = toApproval(answer.response);
+            updateStep(index, { approvedBy: `${APPROVER.name}, on her phone` });
+          } else {
+            approval = await approveReceipt(signed, APPROVER.id, signer);
+            updateStep(index, { approvedBy: `${APPROVER.name}, ${APPROVER.role}` });
+          }
         }
 
         // Every call goes to the executor, including denied ones: it must refuse them itself.

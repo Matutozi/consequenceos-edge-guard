@@ -35,6 +35,8 @@ export interface Approval {
   approvedBy: string;
   approvedAt: string;
   signature: string;
+  /** Fingerprint of the approver's own key, when a paired phone signed it. Absent: the guard's key. */
+  keyId?: string;
 }
 
 export const receiptMessage = (receipt: DecisionReceipt) => `edge-guard/receipt:${receipt.digest}`;

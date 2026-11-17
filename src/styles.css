@@ -353,3 +353,9 @@ a.btn { text-decoration: none; }
 .floor { margin: 0; padding-left: 16px; display: grid; gap: 6px; font-size: 13px; color: var(--text-2); }
 .policy-page table.data select, .policy-page table.data input:not([type=checkbox]) { min-width: 110px; }
 @media (max-width: 900px) { .policy-grid, .policy-fields { grid-template-columns: minmax(0, 1fr); } }
+
+/* Phone pairing */
+.pairing-panel { margin-top: 4px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); display: grid; gap: 6px; }
+.pairing-panel ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pairing-panel li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.pairing p { margin: 0; }

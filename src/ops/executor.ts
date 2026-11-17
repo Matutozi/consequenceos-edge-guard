@@ -1,5 +1,5 @@
 import { canonicalJson, verifyReceipt } from "../domain/receipt";
-import type { ToolCallRecord } from "../domain/types";
+import type { DecisionReceipt, ToolCallRecord } from "../domain/types";
 import { approvalMessage, receiptMessage, type Approval, type SignedReceipt } from "./toolGuard";
 
 export class ExecutionRefused extends Error {
@@ -18,10 +18,23 @@ export type ToolImpl<S> = (state: S, args: Record<string, unknown>) => { state: 
 export class Executor<S> {
   private readonly usedReceipts = new Set<string>();
 
+  /**
+   * @param verifySignature checks Edge Guard's signature on receipts.
+   * @param verifyApproval checks an approval. By default only the guard's own key is
+   *   accepted; the console passes a verifier that also accepts a paired phone's key.
+   */
   constructor(
     private readonly verifySignature: (message: string, signature: string) => Promise<boolean>,
     private readonly tools: Record<string, ToolImpl<S>>,
+    private readonly verifyApproval?: (receipt: DecisionReceipt, approval: Approval) => Promise<boolean>,
   ) {}
+
+  private async approvalIsValid(receipt: DecisionReceipt, approval: Approval | undefined): Promise<boolean> {
+    if (!approval || approval.receiptId !== receipt.id) return false;
+    if (this.verifyApproval) return this.verifyApproval(receipt, approval);
+    if (approval.keyId) return false;
+    return this.verifySignature(approvalMessage(receipt, approval.approvedBy, approval.approvedAt), approval.signature);
+  }
 
   /** Throws ExecutionRefused unless the call is authorized. Never runs a tool on refusal. */
   async authorize(call: ToolCallRecord, signed?: SignedReceipt, approval?: Approval): Promise<void> {
@@ -45,13 +58,9 @@ export class Executor<S> {
       case "deny":
         throw new ExecutionRefused("Edge Guard denied this action.");
       case "require_approval": {
-        const approved =
-          approval?.receiptId === receipt.id &&
-          (await this.verifySignature(
-            approvalMessage(receipt, approval.approvedBy, approval.approvedAt),
-            approval.signature,
-          ));
-        if (!approved) throw new ExecutionRefused("This action needs a valid human approval.");
+        if (!(await this.approvalIsValid(receipt, approval))) {
+          throw new ExecutionRefused("This action needs a valid human approval.");
+        }
         break;
       }
       case "allow":

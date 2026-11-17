@@ -1,6 +1,7 @@
 import { canonicalJson, verifyReceipt } from "../domain/receipt";
 import type { ReceiptDoc, RunDoc } from "./receiptLog";
 import { verifyWithPublicKey } from "./signing";
+import { fingerprint, formatFingerprint, type ApproverDoc } from "./approvals";
 import { approvalMessage, receiptMessage } from "./toolGuard";
 
 export type CheckStatus = "pass" | "fail" | "not-applicable";
@@ -16,7 +17,15 @@ export interface Check {
  * Checks a receipt read back from the audit log, using only what the log holds:
  * the receipt, its signature, the approval, the outcome, and the run's public key.
  */
-export async function checkLoggedReceipt(doc: ReceiptDoc, run: RunDoc | undefined): Promise<Check[]> {
+/**
+ * @param approver the registered key of the phone that signed the approval, when the
+ *   approval names one (`approval.keyId`). Without it, a phone approval cannot be checked.
+ */
+export async function checkLoggedReceipt(
+  doc: ReceiptDoc,
+  run: RunDoc | undefined,
+  approver?: ApproverDoc,
+): Promise<Check[]> {
   const { receipt } = doc;
   const checks: Check[] = [];
 
@@ -60,13 +69,17 @@ export async function checkLoggedReceipt(doc: ReceiptDoc, run: RunDoc | undefine
 
   const needsApproval = receipt.decision.decision === "require_approval";
   let approvalOk = false;
+  const byPhone = !!doc.approval?.keyId;
   if (doc.approval) {
+    // A phone signs with its own Keystore key; everything else with the run's key.
+    const key = byPhone ? approver?.publicKey : run?.publicKey;
     approvalOk =
       digestOk &&
       doc.approval.receiptId === receipt.id &&
-      !!run &&
+      !!key &&
+      (!byPhone || (await fingerprint(key)) === doc.approval.keyId) &&
       (await verifyWithPublicKey(
-        run.publicKey,
+        key,
         approvalMessage(receipt, doc.approval.approvedBy, doc.approval.approvedAt),
         doc.approval.signature,
       ));
@@ -78,7 +91,7 @@ export async function checkLoggedReceipt(doc: ReceiptDoc, run: RunDoc | undefine
     detail: !needsApproval && !doc.approval
       ? "Not needed: Edge Guard did not escalate this call."
       : approvalOk
-        ? `Approved by ${doc.approval!.approvedBy} at ${doc.approval!.approvedAt}; the approval signature verifies.`
+        ? `Approved by ${doc.approval!.approvedBy} at ${doc.approval!.approvedAt}${byPhone ? `, on a phone with key ${formatFingerprint(doc.approval!.keyId!)}` : ""}; the approval signature verifies.`
         : doc.approval
           ? digestOk
             ? "An approval is recorded, but its signature does not verify for this receipt."
@@ -117,6 +130,8 @@ export interface PastedCheck {
 /** Reads from the audit log. Each may reject, for example when Firestore is unreachable. */
 export interface AuditLookup {
   run(runId: string): Promise<RunDoc | undefined>;
+  /** A phone's registered key, for approvals signed on a phone. Optional. */
+  approver?(keyId: string): Promise<ApproverDoc | undefined>;
   receipt(id: string): Promise<ReceiptDoc | undefined>;
 }
 
@@ -201,6 +216,7 @@ export async function checkPastedReceipt(text: string, lookup: AuditLookup): Pro
     : { id: "log-copy", label: "Matches the audit log copy", status: lookupError ? "not-applicable" : "fail", detail: lookupError ? "The audit log could not be read." : "No receipt with this ID is in the audit log." };
 
   const key = loggedRun?.publicKey ?? fileKey;
-  const checks = await checkLoggedReceipt(doc, key ? { agent: "", planner: "live", publicKey: key } : undefined);
+  const approver = doc.approval?.keyId && lookup.approver ? await lookup.approver(doc.approval.keyId).catch(() => undefined) : undefined;
+  const checks = await checkLoggedReceipt(doc, key ? { agent: "", planner: "live", publicKey: key } : undefined, approver);
   return { kind: "signed", receipt: doc.receipt, checks: [origin, logCopy, ...checks] };
 }

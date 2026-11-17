@@ -64,6 +64,7 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
       {phase === "awaiting" && (
         <div className="approval-box" role="group" aria-label="Approval">
           <p>{APPROVER.name} ({APPROVER.role}) has to approve this call before it can run.</p>
+          {step.phone && <PhoneStatus phone={step.phone} />}
           <div className="actions">
             <button type="button" className="btn btn-approve btn-sm" onClick={() => onDecide(true)}>
               Approve <kbd>a</kbd>
@@ -73,6 +74,21 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
             </button>
           </div>
         </div>
+      )}
+
+      {step.phone?.status === "answered" && (
+        <section>
+          <h3>On Mei Lin's phone</h3>
+          {step.phone.explanation ? (
+            <>
+              <p>{step.phone.explanation.text}</p>
+              <p className="quiet">{explanationSource[step.phone.explanation.source]}</p>
+            </>
+          ) : (
+            <p className="quiet">She answered without an explanation.</p>
+          )}
+          <p className="quiet">Her decision is signed by a key in her phone's Android Keystore, checked against the paired fingerprint.</p>
+        </section>
       )}
 
       {receipt && (
@@ -145,7 +161,7 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
             {phase === "executed"
               ? `Ran${step.approvedBy ? `, approved by ${step.approvedBy}` : ""}. ${truncate(step.output ?? "", 200)}`
               : phase === "rejected"
-                ? `Not run. ${APPROVER.name} rejected it.`
+                ? `Not run. ${step.approvedBy ?? APPROVER.name} rejected it.`
                 : `${phase === "refused" ? "Refused" : "Not run"}. ${truncate(step.error ?? "", 200)}`}
           </p>
           {step.errorDetail && <p className="quiet mono" style={{ overflowWrap: "anywhere" }}>{truncate(step.errorDetail, 300)}</p>}
@@ -173,4 +189,21 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
       )}
     </div>
   );
+}
+
+const explanationSource = {
+  "on-device": "Explained by Gemini Nano on her phone. Nothing left the phone.",
+  cloud: "Explained in the cloud through Firebase AI Logic; her phone has no on-device model.",
+  rules: "Explained from the registry and Edge Guard's reasons: this call touches sensitive data and her phone has no on-device model, so nothing was sent to the cloud.",
+} as const;
+
+function PhoneStatus({ phone }: { phone: NonNullable<StepState["phone"]> }) {
+  const text = {
+    sending: "Sending the request to Mei Lin's phone.",
+    sent: "Sent to Mei Lin's phone. Waiting for her answer, or decide here.",
+    answered: "Answered on Mei Lin's phone.",
+    failed: `Could not reach her phone, so decide here. ${phone.detail ?? ""}`,
+    ignored: phone.detail ?? "An answer was ignored.",
+  }[phone.status];
+  return <p className={phone.status === "failed" || phone.status === "ignored" ? "text-deny" : "quiet"}>{text}</p>;
 }

@@ -12,6 +12,7 @@ import { deleteManualTicket } from "../../intake/adapters/manual";
 import { sourceLabel, type Ticket } from "../../intake";
 import { useTicketQueue } from "../../intake/useTicketQueue";
 import { GuardInspector } from "./GuardInspector";
+import { PhonePairing } from "./PhonePairing";
 import { TicketComposer } from "./TicketComposer";
 
 /** The recorded attack replays a run on this ticket only. */
@@ -251,6 +252,7 @@ export default function ConsoleView() {
       >
         <DeviceModelPanel model={deviceModel} disabled={running} />
         <p className="quiet" title={agent.registry?.fallbackReason}>Registry: {registryLine(agent.registry)}</p>
+        <PhonePairing disabled={running} />
         <p className="quiet" title={agent.auditError || undefined}>
           Audit log: {agent.auditError ? "not recording, Firestore is unavailable" : "Cloud Firestore"}
         </p>

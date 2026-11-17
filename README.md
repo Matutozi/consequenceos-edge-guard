@@ -356,6 +356,32 @@ three values for the Firebase console), and someone with access to the project
 publishes it. The app validates what it loads field by field, and a malformed field
 takes its strictest value, so a bad publish can only make Edge Guard stricter.
 
+## Approver phone (Android)
+
+`android/` is Mei Lin's approver app, in Kotlin. When Edge Guard escalates a call and a
+paired phone is trusted, the console writes an approval request to Firestore and the
+request appears on the phone. Whichever answers first, the phone or the console, decides.
+
+- **Hybrid inference on the phone.** The app explains each request with Firebase AI
+  Logic in `PREFER_ON_DEVICE` mode: Gemini Nano on phones with AICore, Gemini in the
+  cloud otherwise. Calls on confidential or restricted data use `ONLY_ON_DEVICE`, so on a
+  phone without Nano they get a rule-based explanation and nothing goes to the cloud.
+  The screen says which path answered.
+- **Signed on the phone.** Mei Lin's decision is signed with an ECDSA P-256 key generated
+  in Android Keystore, which never leaves the phone. The executor accepts a phone
+  approval only if it verifies against a paired key, and the Verify page checks logged
+  phone approvals against that key.
+- **Pairing.** The phone registers its public key under its fingerprint. In the console,
+  **Pair a phone** lists registered phones; trust only the one whose fingerprint matches
+  the phone's screen. An answer signed by any other key is ignored, and a test proves an
+  impostor phone claiming to be Mei Lin is refused.
+- **No billing.** Requests reach the phone through a Firestore listener while the app is
+  open; there is no push service.
+
+Build and install instructions are in [android/README.md](android/README.md). Tested on a
+Samsung Galaxy A13, which has no Gemini Nano, so explanations there come from the cloud
+or, for sensitive calls, from the rules.
+
 ## Run locally
 
 ### Requirements
@@ -447,6 +473,7 @@ This repository was started during the #BuildHybridAI submission period; its fir
 commit is dated 17 November 2026, and no code was copied from ConsequenceOS. Built in
 that period:
 
+- The Android approver app: Keystore-signed approvals, hybrid explanations, pairing
 - The web app: landing page, three-pane console with the Edge Guard inspector, light
   and dark themes, keyboard shortcuts, single action view, Verify and Integrations pages
 - The live planner using Firebase AI Logic function calling, and the recorded attack replay
@@ -466,13 +493,15 @@ that period:
 
 ## Known limitations
 
-- **One page, one trust boundary.** The planner, guard and executor run in the same
-  page, so the signature proves the executor checks Edge Guard's receipts, not that
-  the signer is isolated from the agent. In production the signer belongs on a server
-  or in an extension whose public key the executor pins.
-- **No sign-in.** The approver, Mei Lin, is simulated. Anyone with a valid App Check
-  token can read the audit log or append a run signed with their own key;
-  verification proves a receipt matches its run's key, not who ran it.
+- **One page, one trust boundary for receipts.** The planner, guard and executor run in
+  the same page, so the receipt signature proves the executor checks Edge Guard's
+  receipts, not that the signer is isolated from the agent. Approvals made on a paired
+  phone are the exception: they are signed in Android Keystore, outside the page.
+- **No sign-in.** Mei Lin is simulated. Anyone with a valid App Check token can read the
+  audit log, append a run signed with their own key, or register a phone; a phone counts
+  only after it is paired in the console, and pairing is kept per browser.
+- **The approver app only sees requests while it is open.** Notifications would need
+  Cloud Messaging and a server to send them.
 - **The live planner usually ignores the hidden instruction.** That is good behaviour
   from Gemini, but it means the attack only happens reliably in the recorded replay.
 - **Cloud checks are slow.** Each takes 6 to 12 seconds on Google's side with

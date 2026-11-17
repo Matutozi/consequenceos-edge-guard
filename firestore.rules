@@ -41,6 +41,60 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Approver phones register their Android Keystore public key under its fingerprint.
+    // Registering is open (there is no sign-in), so the console trusts a phone only
+    // after its fingerprint is compared and trusted in that browser.
+    match /approvers/{keyId} {
+      allow read: if true;
+      allow create: if keyId.matches('^[0-9a-f]{16}$')
+        && request.resource.data.keys().hasOnly(['approverId', 'name', 'role', 'platform', 'publicKey', 'registeredAt'])
+        && request.resource.data.approverId is string && request.resource.data.approverId.size() <= 64
+        && request.resource.data.name is string && request.resource.data.name.size() <= 80
+        && request.resource.data.role is string && request.resource.data.role.size() <= 80
+        && request.resource.data.platform is string && request.resource.data.platform.size() <= 40
+        && request.resource.data.publicKey is map
+        && request.resource.data.publicKey.kty == 'EC'
+        && request.resource.data.publicKey.crv == 'P-256'
+        && !('d' in request.resource.data.publicKey)
+        && request.resource.data.registeredAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // The console asks the phone to approve an escalated call.
+    match /approvalRequests/{receiptId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(
+            ['runId', 'agent', 'tool', 'args', 'reason', 'registryEntry', 'rationale', 'receipt', 'signature', 'createdAt'])
+        && exists(/databases/$(database)/documents/runs/$(request.resource.data.runId))
+        && request.resource.data.receipt is map
+        && request.resource.data.receipt.id == receiptId
+        && request.resource.data.receipt.decision.decision == 'require_approval'
+        && request.resource.data.signature is string
+        && request.resource.data.signature.matches('^[0-9a-f]{128}$')
+        && request.resource.data.reason is string && request.resource.data.reason.size() <= 8000
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // One signed answer per request, from a registered phone.
+    match /approvalResponses/{receiptId} {
+      allow read: if true;
+      allow create: if exists(/databases/$(database)/documents/approvalRequests/$(receiptId))
+        && request.resource.data.keys().hasOnly(
+            ['receiptId', 'decision', 'approverId', 'keyId', 'decidedAt', 'signature', 'explanation', 'respondedAt'])
+        && request.resource.data.receiptId == receiptId
+        && request.resource.data.decision in ['approve', 'reject']
+        && request.resource.data.keyId is string
+        && exists(/databases/$(database)/documents/approvers/$(request.resource.data.keyId))
+        && request.resource.data.approverId == get(/databases/$(database)/documents/approvers/$(request.resource.data.keyId)).data.approverId
+        && request.resource.data.decidedAt is string && request.resource.data.decidedAt.size() <= 40
+        && request.resource.data.signature is string
+        && request.resource.data.signature.matches('^[0-9a-f]{128}$')
+        && (request.resource.data.explanation == null || request.resource.data.explanation is map)
+        && request.resource.data.respondedAt == request.time;
+      allow update, delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

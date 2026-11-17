@@ -12,6 +12,7 @@ import {
   Swords,
 } from "lucide-react";
 import { canonicalJson } from "../domain/receipt";
+import { approvalStore, type ApproverDoc } from "../ops/approvals";
 import { receiptLog, type LoggedReceipt, type RunDoc } from "../ops/receiptLog";
 import { allPassed, checkLoggedReceipt, checkPastedReceipt, type Check, type PastedCheck } from "../ops/verifyLogged";
 import { decisionBadge, decisionLabel, routeLine } from "../ui/format";
@@ -19,6 +20,8 @@ import { decisionBadge, decisionLabel, routeLine } from "../ui/format";
 interface Loaded {
   original: LoggedReceipt;
   run?: RunDoc;
+  /** The phone's registered key, when a phone signed the approval. */
+  approver?: ApproverDoc;
 }
 
 
@@ -87,7 +90,9 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
       const original = await receiptLog.getReceipt(receiptId);
       if (!original) throw new Error(`No receipt with ID ${receiptId} is in the audit log.`);
       const run = await receiptLog.getRun(original.runId);
-      return { original, run };
+      const keyId = original.approval?.keyId;
+      const approver = keyId ? await approvalStore.getApprover(keyId).catch(() => undefined) : undefined;
+      return { original, run, approver };
     })().then(
       (result) => current && setLoaded(result),
       (caught: unknown) => {
@@ -104,7 +109,7 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
   useEffect(() => {
     if (!loaded) return;
     let current = true;
-    void checkLoggedReceipt(tampered?.doc ?? loaded.original, loaded.run).then((c) => current && setChecks(c));
+    void checkLoggedReceipt(tampered?.doc ?? loaded.original, loaded.run, loaded.approver).then((c) => current && setChecks(c));
     return () => {
       current = false;
     };
@@ -272,6 +277,7 @@ function CheckList({ checks }: { checks: Check[] }) {
 
 const auditLookup = {
   run: (runId: string) => receiptLog.getRun(runId),
+  approver: (keyId: string) => approvalStore.getApprover(keyId),
   receipt: (id: string) => receiptLog.getReceipt(id),
 };
 
