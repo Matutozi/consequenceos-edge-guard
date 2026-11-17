@@ -9,6 +9,9 @@ allow routine work, require accountable human approval, or deny unsafe actions.
 
 Built for [#BuildHybridAI 2026](https://firebasehybridaihackathon.devpost.com/).
 
+**Live demo:** <https://edge-guard-f1314.web.app> — best in Chrome Desktop 139+ with
+Gemini Nano enabled; other browsers use the Firebase cloud fallback.
+
 ## Why hybrid inference matters
 
 An execution-control system often sees sensitive intent: who will be contacted,

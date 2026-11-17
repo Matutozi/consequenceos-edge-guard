@@ -39,10 +39,10 @@ status. Never put credentials, debug tokens, or private submission answers here.
 
 ## Deployment
 
-- [ ] Create a Firebase Hosting site.
-- [ ] Configure production reCAPTCHA Enterprise authorized domains.
-- [ ] Deploy the production build.
-- [ ] Test the public URL in a clean Chrome profile.
+- [x] Create a Firebase Hosting site.
+- [x] Configure production reCAPTCHA Enterprise authorized domains.
+- [x] Deploy the production build.
+- [x] Test the public URL without a debug token (Chrome on device, Edge cloud fallback).
 - [ ] Add the public URL to the repository About section.
 
 ## Demo video — maximum 3 minutes
