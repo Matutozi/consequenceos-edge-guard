@@ -131,7 +131,9 @@ function StepDetail({ step, registry, onDecide }: { step: StepState; registry?: 
               ? "Sent to Firebase AI Logic: the tool name, its arguments, the agent's reason and the registry description. Nothing else from the ticket."
               : receipt.inferenceSource === "ON_DEVICE"
                 ? "Assessed by Gemini Nano. Nothing left this device."
-                : receipt.inferenceSource === "TIMED_OUT"
+                : receipt.inferenceSource === "UNAVAILABLE"
+                  ? "No assessor could be reached, for example because this device is offline and Gemini Nano is not ready. Edge Guard failed closed and sent the call to a person."
+                  : receipt.inferenceSource === "TIMED_OUT"
                   ? "The assessor did not answer in time and the request was cancelled. Edge Guard failed closed and sent the call to a person."
                   : "Decided by rule. No model saw this call."}
           </p>

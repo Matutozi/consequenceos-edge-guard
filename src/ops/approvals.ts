@@ -162,9 +162,18 @@ export const approvalStore = {
     return snap.exists() ? (snap.data() as ApproverDoc) : undefined;
   },
 
+  /** Offline, Firestore queues the write and never confirms it; give up after 10 s. */
   async request(doc: ApprovalRequestDoc): Promise<void> {
     const { db, fs } = await firestore();
-    await fs.setDoc(fs.doc(db, REQUESTS, doc.receipt.id), { ...doc, createdAt: fs.serverTimestamp() });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Firestore did not confirm the request within 10 s.")), 10_000);
+    });
+    try {
+      await Promise.race([fs.setDoc(fs.doc(db, REQUESTS, doc.receipt.id), { ...doc, createdAt: fs.serverTimestamp() }), deadline]);
+    } finally {
+      clearTimeout(timer);
+    }
   },
 
   /** Calls back once with the phone's answer. Returns a function that stops listening. */

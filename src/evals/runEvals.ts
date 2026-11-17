@@ -81,7 +81,10 @@ export async function runCase(evalCase: EvalCase, route: EvalRoute, signer: Sign
   }
 }
 
-const isRateLimited = (r: EvalResult) => r.verdict === "error" && /\b429\b|quota|rate limit/i.test(r.error ?? "");
+/** A rate limit shows up as an error, or as a receipt the guard sent to a person because the
+ *  assessor could not be reached; either way the case was not really assessed. */
+const isRateLimited = (r: EvalResult) =>
+  (r.verdict === "error" || r.verdict === "not-assessed") && /\b429\b|quota|rate limit/i.test(r.error ?? r.reason ?? "");
 
 /** Retries a case that hit the API's per-minute limit, waiting longer each time. */
 async function runWithRetry(evalCase: EvalCase, route: EvalRoute, signer: Signer, waitMs: number): Promise<EvalResult> {

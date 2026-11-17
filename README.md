@@ -34,6 +34,8 @@ sensitive ones to a person.
   upload a receipt file, or tamper with a local copy to see what the checks catch.
 - **Integrations** (`#/integrations`): every ticket source with an honest status and
   its field mapping.
+- **Offline**: disconnect after loading and the rules, signing, executor and recorded
+  replay keep working; anything that needs a model it cannot reach goes to a person.
 - **Evals** (`#/evals`): run 42 guarded calls with known right answers against the
   cloud or Gemini Nano and see false allows, over-escalation and timing.
 - **Policy** (`#/policy`): edit a draft of the rules and see at once whether it would
@@ -408,6 +410,25 @@ request appears on the phone. Whichever answers first, the phone or the console,
 Build and install instructions are in [android/README.md](android/README.md). Tested on a
 Samsung Galaxy A13, which has no Gemini Nano, so explanations there come from the cloud
 or, for sensitive calls, from the rules.
+
+## Offline
+
+Load the console, then disconnect. Measured in a browser with the network cut after
+loading: the recorded attack runs end to end in about 5 seconds.
+
+- **Keeps working:** every rule (egress, hard rules, fanout, fast paths), signing
+  receipts and approvals, the executor's checks, approvals in the console, and the
+  recorded replay. Calls on restricted data are still blocked, and reads and notes are
+  still allowed, in milliseconds.
+- **Gemini Nano, if it is ready,** still assesses on the device and can escalate or block.
+  An allow from Nano needs the cloud's second opinion, which cannot be reached, so the
+  call goes to a person.
+- **Without Nano,** a call that needs judgement cannot be assessed, so it goes to a
+  person: "The assessor could not be reached (no network connection)". Nothing is run
+  or dropped because a model was missing.
+- **Stops:** the live planner (it is in the cloud), the audit log (each receipt shows
+  "Not saved: Firestore did not respond"), and requests to the approver phone, which
+  fall back to approval in the console after 10 seconds.
 
 ## Run locally
 

@@ -5,7 +5,7 @@ import {
   OnDeviceUnavailableError,
   type AnalyzeOptions,
 } from "../ai/analyzeAction";
-import { escalateTimedOut, escalateUnassessed, evaluateHardRules, evaluatePolicy } from "./policy";
+import { escalateTimedOut, escalateUnassessed, escalateUnavailable, evaluateHardRules, evaluatePolicy } from "./policy";
 import { DEFAULT_POLICY, type PolicyConfig } from "./policyConfig";
 import { createDecisionReceipt } from "./receipt";
 import type {
@@ -19,6 +19,16 @@ import type {
 } from "./types";
 
 const strictness: Record<PolicyDecision, number> = { allow: 0, require_approval: 1, deny: 2 };
+
+/** A short, plain reason for a failed model call, for the signed receipt and the inspector. */
+export function plainFailure(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/failed to fetch|network|offline|ERR_INTERNET|ENOTFOUND|ECONNREFUSED/i.test(message)) return "no network connection";
+  if (/\b429\b|quota|rate limit/i.test(message)) return "the cloud model's rate limit was reached (429)";
+  if (/\b40[13]\b|app check/i.test(message)) return "the request was refused by App Check";
+  if (/timed? ?out|deadline/i.test(message)) return "it did not answer in time";
+  return "the model returned an error";
+}
 const decisionWords: Record<PolicyDecision, string> = {
   allow: "allows it",
   require_approval: "says a person should approve it",
@@ -70,7 +80,7 @@ async function withSecondOpinion(
         : { decision: first.decision, rationale: [...first.rationale, "The cloud second opinion agreed."] },
     };
   } catch (error) {
-    const why = error instanceof Error ? ` (${error.message})` : "";
+    const why = ` (${plainFailure(error)})`;
     return {
       analysis: { ...device, secondOpinion: { status: "unavailable" } },
       decision: {
@@ -86,7 +96,8 @@ const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 /**
  * The full control path: hard rules first (no model needed), then risk analysis and
  * policy. Every outcome produces a receipt. An action that must stay on device but
- * cannot be assessed, or whose assessment times out, fails closed to human approval.
+ * cannot be assessed, whose assessment times out, or whose assessor cannot be reached
+ * at all (for example offline) fails closed to human approval.
  * When Gemini Nano would allow a call, the cloud gives a second opinion first.
  */
 export async function guardAction(
@@ -125,6 +136,13 @@ export async function guardAction(
         toolCall,
       );
     }
-    throw error;
+    // Any other failure (offline, a refused request, an unusable answer): no assessment,
+    // so a person decides. A call is never run, or dropped, because a model was missing.
+    return createDecisionReceipt(
+      proposal,
+      { assessment: null, inferenceSource: "UNAVAILABLE" },
+      escalateUnavailable(plainFailure(error)),
+      toolCall,
+    );
   }
 }

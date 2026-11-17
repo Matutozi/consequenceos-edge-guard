@@ -45,6 +45,14 @@ export function escalateTimedOut(ms: number): GuardDecision {
   };
 }
 
+/** The fail-closed decision when no assessor can be reached, for example offline. */
+export function escalateUnavailable(reason: string): GuardDecision {
+  return {
+    decision: "require_approval",
+    rationale: [`The assessor could not be reached (${reason}), so the call was not assessed.`, "A person has to approve it."],
+  };
+}
+
 export function evaluatePolicy(
   proposal: ActionProposal,
   assessment: RiskAssessment,

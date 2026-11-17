@@ -31,8 +31,9 @@ export interface GuardDecision {
 /**
  * `NONE`: no model was called; the decision came from deterministic policy alone.
  * `TIMED_OUT`: a model was asked but did not answer in time, so the request was aborted.
+ * `UNAVAILABLE`: no model could be reached (for example offline), so the call went to a person.
  */
-export type InferenceSource = "ON_DEVICE" | "IN_CLOUD" | "UNKNOWN" | "NONE" | "TIMED_OUT";
+export type InferenceSource = "ON_DEVICE" | "IN_CLOUD" | "UNKNOWN" | "NONE" | "TIMED_OUT" | "UNAVAILABLE";
 
 export interface AnalysisResult {
   assessment: RiskAssessment;

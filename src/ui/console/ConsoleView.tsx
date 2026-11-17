@@ -209,7 +209,7 @@ export default function ConsoleView() {
         <section className="timeline" aria-label="Agent steps">
           <h2>Agent steps</h2>
           <ol className="steps">
-            {steps.length === 0 && !running && (
+            {steps.length === 0 && !running && !agent.runError && (
               <li className="step-note">No steps yet. Run the agent to start.</li>
             )}
             {steps.map((step, index) => (

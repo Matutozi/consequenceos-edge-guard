@@ -81,9 +81,13 @@ describe("guardAction", () => {
     expect(receipt.inferenceSource).toBe("IN_CLOUD");
   });
 
-  it("still surfaces other analysis failures", async () => {
-    analyzeAction.mockRejectedValue(new Error("network down"));
-    await expect(guardAction(routine)).rejects.toThrow(/network down/);
+  it("sends the call to a person when no assessor can be reached, for example offline", async () => {
+    analyzeAction.mockRejectedValue(new Error("Failed to fetch"));
+    const receipt = await guardAction(routine);
+    expect(receipt.decision.decision).toBe("require_approval");
+    expect(receipt.inferenceSource).toBe("UNAVAILABLE");
+    expect(receipt.decision.rationale[0]).toBe("The assessor could not be reached (no network connection), so the call was not assessed.");
+    expect(await verifyReceipt(receipt)).toBe(true);
   });
 });
 
@@ -119,10 +123,10 @@ describe("cloud second opinion on Gemini Nano's allows", () => {
   });
 
   it("sends the call to a person when the second opinion does not answer", async () => {
-    analyzeAction.mockResolvedValueOnce(assessed("low", "ON_DEVICE")).mockRejectedValueOnce(new Error("offline"));
+    analyzeAction.mockResolvedValueOnce(assessed("low", "ON_DEVICE")).mockRejectedValueOnce(new Error("TypeError: Failed to fetch"));
     const receipt = await guardAction(routine);
     expect(receipt.decision.decision).toBe("require_approval");
-    expect(receipt.decision.rationale[0]).toMatch(/did not answer \(offline\)/);
+    expect(receipt.decision.rationale[0]).toMatch(/did not answer \(no network connection\)/);
     expect(receipt.secondOpinion?.status).toBe("unavailable");
   });
 
@@ -155,5 +159,15 @@ describe("cloud second opinion on Gemini Nano's allows", () => {
     const receipt = await guardAction(routine);
     expect(await verifyReceipt(receipt)).toBe(true);
     expect(await verifyReceipt({ ...receipt, secondOpinion: { ...receipt.secondOpinion!, status: "agreed" } })).toBe(false);
+  });
+});
+
+describe("plainFailure", () => {
+  it("turns raw SDK errors into short reasons", async () => {
+    const { plainFailure } = await import("./guard");
+    expect(plainFailure(new Error("AI: Error fetching from https://x: Failed to fetch (AI/error)"))).toBe("no network connection");
+    expect(plainFailure(new Error("[429 ] You exceeded your current quota"))).toBe("the cloud model's rate limit was reached (429)");
+    expect(plainFailure(new Error("[401 ] Firebase App Check token is invalid"))).toBe("the request was refused by App Check");
+    expect(plainFailure(new Error("something odd"))).toBe("the model returned an error");
   });
 });
