@@ -52,6 +52,9 @@ export default function App() {
 
       <footer>
         <span>ConsequenceOS Edge Guard</span>
+        <a href="https://github.com/Matutozi/Consequence-OS" target="_blank" rel="noopener noreferrer">
+          Built on the ConsequenceOS design →
+        </a>
         <span>No receipt, no action.</span>
       </footer>
     </div>

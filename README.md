@@ -199,10 +199,43 @@ Signed receipt bound to the exact call ──► Cloud Firestore audit log (appe
 Executor: no valid receipt, no action ──► result back to the planner
 ```
 
+## Relationship to ConsequenceOS
+
+Edge Guard is built on the design of [ConsequenceOS](https://github.com/Matutozi/Consequence-OS),
+an open-source execution-control gateway for AI agents by the same author, written in
+Go before this hackathon. ConsequenceOS sits between an agent and its MCP tool server
+and enforces "no receipt, no action" on the server side. Edge Guard takes the same
+model into the browser and adds what ConsequenceOS does not have: a per-call risk
+assessment from Gemini Nano on the device, with Firebase AI Logic in the cloud.
+
+This repository does not import, call or copy ConsequenceOS code. The shared ideas
+were reimplemented in TypeScript for the browser:
+
+| Idea | ConsequenceOS (Go, server) | Edge Guard (TypeScript, browser) |
+|---|---|---|
+| No receipt, no action | Receiver middleware returns 403 without a valid receipt | `src/ops/executor.ts` refuses the call |
+| Receipt bound to one call | Tool and a hash of the canonical arguments; single use; expires after 5 minutes | Tool and arguments recorded in the signed receipt; single use; no expiry |
+| Three outcomes | Policy rules: allow, ask, deny | `src/domain/policy.ts`: allow, require approval, deny |
+| Unknown tools | Score 80, treated as irreversible | Treated as restricted and irreversible, so denied |
+| How serious a call is | Static tools map: a score from the tool's reversibility | Registry in Remote Config plus a model assessment of each call |
+| Signatures | Ed25519 and ML-DSA-87 with server-held keys, published as a JWKS | ECDSA P-256 with a per-run key generated in the browser |
+| Approvals | Approval page, approver notified by email | Approval card in the console |
+| Audit | Hash-chained log the agent cannot touch | Append-only Cloud Firestore collection, enforced by security rules |
+
+ConsequenceOS's own docs name its main gap: the tools map scores a tool, not a
+call, so deleting one row and deleting every row score the same, and facts such as
+blast radius and data classes stay empty. Edge Guard's per-call assessment is the
+missing piece. The planned integration (see Roadmap) puts Edge Guard in front of the
+ConsequenceOS gateway as the on-device first line: it blocks clear violations early
+and passes its assessment along as a fact that can raise a call's score but never
+lower it. ConsequenceOS keeps policy, approvals, receipts and the audit log, which
+belong on a server the agent cannot reach.
+
 ## Existing work disclosure
 
-ConsequenceOS existed before the hackathon as a separate, open-source execution-
-control project. This repository is a new #BuildHybridAI application. Everything
+[ConsequenceOS](https://github.com/Matutozi/Consequence-OS) existed before the
+hackathon as a separate, open-source execution-control project; Edge Guard follows
+its design, as described above. This repository is a new #BuildHybridAI application. Everything
 in it was created during the hackathon submission period: the Web UI, the agent
 console and its live Gemini planner, the Firebase AI Logic hybrid inference path,
 on-device risk assessment, the tool registry in Remote Config, the policy engine,
