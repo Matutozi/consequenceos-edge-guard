@@ -1,79 +1,41 @@
-import { Cloud, Cpu, Download, LoaderCircle } from "lucide-react";
+import { Download, LoaderCircle } from "lucide-react";
 import type { DeviceModel } from "./useDeviceModel";
 
-interface DeviceModelPanelProps {
-  model: DeviceModel;
-  disabled?: boolean;
-  compact?: boolean;
-}
-
-export function DeviceModelPanel({ model, disabled = false, compact = false }: DeviceModelPanelProps) {
+/** One quiet line on Gemini Nano's state, with a download control where Chrome offers one. */
+export function DeviceModelPanel({ model, disabled = false }: { model: DeviceModel; disabled?: boolean }) {
   const { status, preparing, progress, error } = model;
-  const noLocalModel = status === "unsupported" || status === "unavailable";
-  const canPrepare = status === "downloadable" || status === "downloading";
   const percent = Math.round(progress * 100);
+  const canPrepare = status === "downloadable" || status === "downloading";
 
-  let title: string;
-  let detail: string;
-  if (preparing) {
-    title = `Downloading Gemini Nano · ${percent}%`;
-    detail = "Chrome downloads the model once. Public and internal actions can use the cloud meanwhile.";
-  } else if (status === undefined) {
-    title = "Checking on-device model…";
-    detail = "Looking for Gemini Nano in this browser.";
-  } else if (status === "available") {
-    title = "Gemini Nano ready";
-    detail = "Actions are assessed privately on this device first.";
-  } else if (canPrepare) {
-    title = status === "downloading" ? "Gemini Nano is downloading" : "Gemini Nano not downloaded";
-    detail =
-      "Download it once to assess actions on this device. Until then, public and internal actions use the cloud.";
-  } else {
-    title =
-      status === "unsupported" ? "No on-device model in this browser" : "Gemini Nano can't run on this device";
-    detail =
-      "Public and internal actions use Firebase AI Logic in the cloud. Sensitive actions never leave the device: they go to a human.";
-  }
+  const text = preparing
+    ? `Downloading Gemini Nano, ${percent}%`
+    : status === undefined
+      ? "Checking for Gemini Nano"
+      : status === "available"
+        ? "Gemini Nano is ready on this device"
+        : canPrepare
+          ? status === "downloading"
+            ? "Gemini Nano is downloading"
+            : "Gemini Nano is not downloaded. Until it is, public and internal checks use the cloud"
+          : status === "unsupported"
+            ? "This browser has no on-device model. Public and internal checks use the cloud; sensitive ones go to a person"
+            : "Gemini Nano can't run on this device. Public and internal checks use the cloud; sensitive ones go to a person";
 
   return (
-    <div
-      className={`model-panel ${status === "available" ? "ready" : ""} ${compact ? "compact" : ""}`}
-      aria-live="polite"
-    >
-      <span className="model-icon">
-        {preparing ? (
-          <LoaderCircle className="spin" size={16} />
-        ) : noLocalModel ? (
-          <Cloud size={16} />
-        ) : (
-          <Cpu size={16} />
-        )}
-      </span>
-      <span className="model-text">
-        <strong>{title}</strong>
-        <small>{detail}</small>
-        {preparing && (
-          <span
-            className="model-progress"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-          >
-            <span style={{ width: `${percent}%` }} />
-          </span>
-        )}
-        {error && (
-          <small className="model-error" role="alert">
-            {error}
-          </small>
-        )}
-      </span>
+    <div className="model-status" aria-live="polite">
+      {preparing && <LoaderCircle className="spin" size={13} aria-hidden="true" />}
+      <span>{text}</span>
       {canPrepare && !preparing && (
-        <button type="button" disabled={disabled} onClick={() => void model.prepare()}>
-          <Download size={14} /> {status === "downloading" ? "Track" : "Download"}
+        <button type="button" className="btn btn-sm" disabled={disabled} onClick={() => void model.prepare()}>
+          <Download size={13} aria-hidden="true" /> {status === "downloading" ? "Show progress" : "Download model"}
         </button>
       )}
+      {preparing && (
+        <span className="progress" role="progressbar" aria-label="Gemini Nano download" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
+          <span style={{ width: `${percent}%` }} />
+        </span>
+      )}
+      {error && <span className="text-deny" role="alert">{error}</span>}
     </div>
   );
 }

@@ -48,7 +48,7 @@ export function callRecord(call: ToolCallRecord): ToolCallRecord {
 export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolean }): ActionProposal {
   return {
     actor: call.agent,
-    action: `${call.tool}(${canonicalJson(call.args)}) — ${meta.description}`,
+    action: `${call.tool}(${canonicalJson(call.args)}). ${meta.description}`,
     target: meta.registered ? meta.system : `${meta.system} (tool "${call.tool}" is not registered)`,
     context: call.reason,
     dataSensitivity: meta.sensitivity,
@@ -62,12 +62,11 @@ function evaluateEgress(call: ToolCall, meta: ToolMeta, domains: string[]): Guar
   if (!meta.egress) return undefined;
   const destination = call.args[meta.egress.arg];
   if (isInternalDestination(destination, domains)) return undefined;
-  const where = `${String(destination)} is outside ${domains.join(", ")}`;
   return meta.egress.outside === "deny"
-    ? { decision: "deny", rationale: [`Blocked data egress: ${where}.`] }
+    ? { decision: "deny", rationale: [`Sends data to ${String(destination)}, which is outside ${domains.join(", ")}. Blocked by rule.`] }
     : {
         decision: "require_approval",
-        rationale: [`${where}; sending outside the organization needs human approval.`],
+        rationale: [`Sends to ${String(destination)}, which is outside ${domains.join(", ")}, so a person has to approve it.`],
       };
 }
 
@@ -100,7 +99,7 @@ export async function guardToolCall(
   if (hardDecision) {
     if (!meta.registered) {
       hardDecision.rationale.unshift(
-        `"${call.tool}" is not in the tool registry, so it is treated as irreversible and restricted.`,
+        `${call.tool} is not in the tool registry, so it is treated as restricted and irreversible.`,
       );
     }
     receipt = await createDecisionReceipt(proposal, noModel, hardDecision, record);
@@ -111,7 +110,7 @@ export async function guardToolCall(
       {
         decision: "allow",
         rationale: [
-          `Read-only access to ${meta.sensitivity} data in a registered system is allowed without a model call.`,
+          `${call.tool} only reads ${meta.sensitivity} data. Allowed by rule, with no model call.`,
         ],
       },
       record,

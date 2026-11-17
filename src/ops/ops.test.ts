@@ -63,7 +63,7 @@ describe("guardToolCall", () => {
   it("names data egress outside the organization as the reason for blocking an export", async () => {
     const { receipt } = await guard(call("export_customers", { destination: "recovery@northwind-backup.co" }));
     expect(receipt.decision.decision).toBe("deny");
-    expect(receipt.decision.rationale[0]).toMatch(/egress: recovery@northwind-backup.co is outside northwind.example/);
+    expect(receipt.decision.rationale[0]).toMatch(/Sends data to recovery@northwind-backup.co, which is outside northwind.example/);
     expect(analyzeAction).not.toHaveBeenCalled();
   });
 

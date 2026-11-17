@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { Moon, ShieldCheck, Sun } from "lucide-react";
 import ActionInspector from "./ActionInspector";
-import OpsConsole from "./ops/OpsConsole";
+import ConsoleView from "./ui/console/ConsoleView";
+import { applyTheme, storedTheme, type Theme } from "./ui/theme";
 import VerifyPage from "./verify/VerifyPage";
 
 type Route = { view: "console" } | { view: "inspector" } | { view: "verify"; receiptId?: string };
@@ -16,7 +17,7 @@ function routeFromHash(): Route {
 
 export default function App() {
   const [route, setRoute] = useState<Route>(routeFromHash);
-  const { view } = route;
+  const [theme, setTheme] = useState<Theme>(storedTheme);
 
   useEffect(() => {
     const onHashChange = () => {
@@ -27,36 +28,52 @@ export default function App() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  useEffect(() => applyTheme(theme), [theme]);
+
+  const nav: [Route["view"], string, string][] = [
+    ["console", "#/console", "Console"],
+    ["inspector", "#/inspector", "Single action"],
+    ["verify", "#/verify", "Verify"],
+  ];
+
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#/console" aria-label="ConsequenceOS Edge Guard home">
-          <span className="brand-mark"><ShieldCheck size={19} /></span>
-          <span>Consequence<span>OS</span></span>
-          <span className="product-tag">EDGE GUARD</span>
+        <a className="brand" href="#/console">
+          <span className="brand-mark" aria-hidden="true"><ShieldCheck size={13} /></span>
+          <span>Edge Guard</span>
         </a>
-        <nav className="view-tabs" aria-label="Views">
-          <a href="#/console" aria-current={view === "console" ? "page" : undefined}>Agent console</a>
-          <a href="#/inspector" aria-current={view === "inspector" ? "page" : undefined}>Single action</a>
-          <a href="#/verify" aria-current={view === "verify" ? "page" : undefined}>Verify</a>
+        <nav className="nav" aria-label="Views">
+          {nav.map(([view, href, label]) => (
+            <a key={view} href={href} aria-current={route.view === view ? "page" : undefined}>{label}</a>
+          ))}
         </nav>
+        <div className="topbar-end">
+          <a className="quiet" href="https://github.com/Matutozi/Consequence-OS" target="_blank" rel="noopener noreferrer">
+            Built on the ConsequenceOS design
+          </a>
+          <button
+            type="button"
+            className="btn btn-ghost icon-btn"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={theme === "dark" ? "Use light theme" : "Use dark theme"}
+            title={theme === "dark" ? "Use light theme" : "Use dark theme"}
+          >
+            {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+        </div>
       </header>
 
-      {route.view === "console" ? (
-        <OpsConsole />
-      ) : route.view === "verify" ? (
-        <VerifyPage receiptId={route.receiptId} />
-      ) : (
-        <ActionInspector />
-      )}
+      <div className="app-main">
+        {route.view === "console" ? (
+          <ConsoleView />
+        ) : route.view === "verify" ? (
+          <VerifyPage receiptId={route.receiptId} />
+        ) : (
+          <ActionInspector />
+        )}
+      </div>
 
-      <footer>
-        <span>ConsequenceOS Edge Guard</span>
-        <a href="https://github.com/Matutozi/Consequence-OS" target="_blank" rel="noopener noreferrer">
-          Built on the ConsequenceOS design →
-        </a>
-        <span>No receipt, no action.</span>
-      </footer>
     </div>
   );
 }

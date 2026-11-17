@@ -3,7 +3,6 @@ import {
   CircleCheck,
   CircleMinus,
   CircleX,
-  Database,
   Download,
   FileSearch,
   LoaderCircle,
@@ -15,20 +14,13 @@ import {
 import { canonicalJson } from "../domain/receipt";
 import { receiptLog, type LoggedReceipt, type RunDoc } from "../ops/receiptLog";
 import { allPassed, checkLoggedReceipt, type Check } from "../ops/verifyLogged";
+import { decisionBadge, decisionLabel, routeLine } from "../ui/format";
 
 interface Loaded {
   original: LoggedReceipt;
   run?: RunDoc;
 }
 
-const decisionLabel = { allow: "Allowed", require_approval: "Escalated", deny: "Blocked" } as const;
-const decisionTone = { allow: "allow", require_approval: "review", deny: "deny" } as const;
-const sourceLabel = {
-  ON_DEVICE: "Gemini Nano · on device",
-  IN_CLOUD: "Firebase AI Logic · cloud",
-  NONE: "Policy only · no model",
-  UNKNOWN: "Source unknown",
-} as const;
 
 /** A local copy with one field changed, to show what the checks catch. Never written anywhere. */
 function tamper(doc: LoggedReceipt): { doc: LoggedReceipt; change: string } {
@@ -128,139 +120,131 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
   const passed = checks ? allPassed(checks) : undefined;
 
   return (
-    <main className="verify">
-      <section className="console-hero">
-        <div className="eyebrow"><Database size={14} /> Audit log · Cloud Firestore</div>
-        <h1>Verify a receipt.</h1>
+    <div className="page">
+      <div className="page-header">
+        <h1>Verify a receipt</h1>
         <p>
-          Every decision Edge Guard makes is signed, bound to one exact call and appended to an
-          audit log no client can edit. Check any receipt from the log alone: its contents, its
-          signature against the run's public key, its approval, and whether what happened matches
-          what was decided.
+          Each decision is signed, bound to one exact call and appended to an audit log in Cloud
+          Firestore that no client can edit. Pick a receipt to check its contents, its signature
+          against the run's public key, its approval, and whether what happened matches the decision.
         </p>
         <form className="verify-form" onSubmit={submit}>
           <input
             aria-label="Receipt ID"
-            placeholder="Receipt ID, for example 3f2c…"
+            placeholder="Receipt ID"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <button type="submit" className="run-button"><FileSearch size={16} /> Verify</button>
+          <button type="submit" className="btn btn-primary"><FileSearch size={14} aria-hidden="true" /> Verify</button>
         </form>
-      </section>
+      </div>
 
-      <section className="verify-grid">
-        <aside className="sys-card recent-card" aria-label="Recent receipts">
-          <h3>
-            <Database size={15} /> Recent receipts
-            <button type="button" className="icon-button" onClick={loadRecent} title="Refresh">
-              <RotateCcw size={13} />
+      <div className="verify-grid">
+        <section className="card" aria-label="Recent receipts">
+          <div className="card-header">
+            Recent receipts
+            <button type="button" className="btn btn-ghost btn-sm" onClick={loadRecent}>
+              <RotateCcw size={13} aria-hidden="true" /> Refresh
             </button>
-          </h3>
+          </div>
           {recentError ? (
-            <p className="sys-line">The audit log could not be read: {recentError}</p>
+            <div className="state state-error"><strong>Could not read the audit log</strong>{recentError}</div>
           ) : !recent ? (
-            <p className="sys-line"><LoaderCircle className="spin" size={13} /> Loading…</p>
+            <div className="state"><LoaderCircle className="spin" size={13} aria-hidden="true" /> Loading receipts</div>
           ) : recent.length === 0 ? (
-            <p className="sys-line">No receipts yet. Run the agent in the console to create some.</p>
+            <div className="state">No receipts yet. Run the agent in the console to create some.</div>
           ) : (
-            <ul className="recent-list">
+            <ul className="receipt-list">
               {recent.map((r) => (
                 <li key={r.receipt.id}>
-                  <a
-                    href={`#/verify/${r.receipt.id}`}
-                    aria-current={r.receipt.id === receiptId ? "true" : undefined}
-                  >
+                  <a href={`#/verify/${r.receipt.id}`} aria-current={r.receipt.id === receiptId ? "true" : undefined}>
                     <code>{r.receipt.toolCall?.tool ?? "unknown"}</code>
-                    <span className={`decision-chip ${decisionTone[r.receipt.decision.decision]}`}>
-                      {decisionLabel[r.receipt.decision.decision]}
-                    </span>
+                    <span className={decisionBadge[r.receipt.decision.decision]}>{decisionLabel[r.receipt.decision.decision]}</span>
                     <small>
-                      {r.outcome}
-                      {r.loggedAt ? ` · ${new Date(r.loggedAt).toLocaleString()}` : ""}
+                      {r.outcome[0].toUpperCase() + r.outcome.slice(1)}
+                      {r.loggedAt ? `, ${new Date(r.loggedAt).toLocaleString()}` : ""}
                     </small>
                   </a>
                 </li>
               ))}
             </ul>
           )}
-        </aside>
+        </section>
 
-        <div className="verify-result" aria-live="polite">
+        <section className="card" aria-live="polite" aria-label="Verification">
           {loading ? (
-            <div className="run-empty"><LoaderCircle className="spin" size={26} /><h3>Reading the audit log…</h3></div>
+            <div className="state"><LoaderCircle className="spin" size={13} aria-hidden="true" /> Reading the audit log</div>
           ) : error ? (
-            <div className="planner-card failed" role="alert"><ShieldX size={15} /><span>{error}</span></div>
+            <div className="state state-error" role="alert"><strong>Receipt not found</strong>{error}</div>
           ) : !loaded || !shown ? (
-            <div className="run-empty">
-              <FileSearch size={30} />
-              <h3>Pick a receipt</h3>
-              <p>Choose one from the audit log, or paste a receipt ID from the agent console.</p>
-            </div>
+            <div className="state"><strong>No receipt selected</strong>Choose one from the list, or paste a receipt ID.</div>
           ) : (
             <>
-              <div className={`decision-banner ${passed === undefined ? "" : passed ? "allow" : "deny"}`}>
-                <span>{passed === false ? <ShieldX size={24} /> : <ShieldCheck size={24} />}</span>
-                <div>
-                  <small>{tampered ? "TAMPERED LOCAL COPY" : "RECEIPT FROM THE AUDIT LOG"}</small>
-                  <h3>
-                    {passed === undefined ? "Checking…" : passed ? "Verified" : "Verification failed"}
-                  </h3>
-                </div>
+              <div className="card-header">
+                <span className={`verdict ${passed === undefined ? "" : passed ? "ok" : "bad"}`}>
+                  {passed === false ? <ShieldX size={16} aria-hidden="true" /> : <ShieldCheck size={16} aria-hidden="true" />}
+                  {passed === undefined ? "Checking" : passed ? "Verified" : "Verification failed"}
+                </span>
+                <span className="quiet">{tampered ? "Tampered local copy" : "From the audit log"}</span>
               </div>
-
-              {tampered && (
-                <p className="tamper-note">
-                  <Swords size={14} /> {tampered.change} Nothing was written: the audit log can't be
-                  edited. This shows what the checks catch.
-                </p>
-              )}
-
-              <dl className="receipt-facts">
-                <div><dt>Call</dt><dd><code>{shown.receipt.toolCall ? `${shown.receipt.toolCall.tool}(${canonicalJson(shown.receipt.toolCall.args)})` : "none"}</code></dd></div>
-                <div><dt>Agent</dt><dd>{shown.receipt.proposal.actor}</dd></div>
-                <div>
+              <div className="card-body">
+                {tampered && (
+                  <div className="notice notice-review">
+                    {tampered.change} Nothing was written: the audit log can't be edited. This shows what the checks catch.
+                  </div>
+                )}
+                <dl className="facts">
+                  <dt>Call</dt>
+                  <dd className="mono">{shown.receipt.toolCall ? `${shown.receipt.toolCall.tool}(${canonicalJson(shown.receipt.toolCall.args)})` : "None"}</dd>
+                  <dt>Agent</dt>
+                  <dd>{shown.receipt.proposal.actor}</dd>
                   <dt>Decision</dt>
                   <dd>
-                    <span className={`decision-chip ${decisionTone[shown.receipt.decision.decision]}`}>
-                      {decisionLabel[shown.receipt.decision.decision]}
-                    </span>{" "}
+                    <span className={decisionBadge[shown.receipt.decision.decision]}>{decisionLabel[shown.receipt.decision.decision]}</span>{" "}
                     {shown.receipt.decision.rationale[0]}
                   </dd>
+                  <dt>Route</dt>
+                  <dd>{routeLine(shown.receipt.inferenceSource)}</dd>
+                  <dt>Outcome</dt>
+                  <dd>{shown.outcome[0].toUpperCase() + shown.outcome.slice(1)}</dd>
+                  <dt>Receipt</dt>
+                  <dd className="mono">{shown.receipt.id}</dd>
+                  <dt>Logged</dt>
+                  <dd>{shown.loggedAt ? new Date(shown.loggedAt).toLocaleString() : "Unknown"}</dd>
+                </dl>
+                <ul className="checks">
+                  {(checks ?? []).map((check) => (
+                    <li key={check.id} className={check.status}>
+                      {check.status === "pass" ? (
+                        <CircleCheck size={16} aria-label="Passed" />
+                      ) : check.status === "fail" ? (
+                        <CircleX size={16} aria-label="Failed" />
+                      ) : (
+                        <CircleMinus size={16} aria-label="Not applicable" />
+                      )}
+                      <span>{check.label}<small>{check.detail}</small></span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="presets">
+                  {tampered ? (
+                    <button type="button" className="btn btn-sm" onClick={() => setTampered(undefined)}>
+                      <RotateCcw size={13} aria-hidden="true" /> Restore the original
+                    </button>
+                  ) : (
+                    <button type="button" className="btn btn-sm" onClick={() => setTampered(tamper(loaded.original))}>
+                      <Swords size={13} aria-hidden="true" /> Tamper with it
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-sm" onClick={() => download(loaded.original, loaded.run)}>
+                    <Download size={13} aria-hidden="true" /> Download with public key
+                  </button>
                 </div>
-                <div><dt>Assessed by</dt><dd>{sourceLabel[shown.receipt.inferenceSource]}</dd></div>
-                <div><dt>Outcome</dt><dd>{shown.outcome}</dd></div>
-                <div><dt>Receipt</dt><dd><code>{shown.receipt.id}</code></dd></div>
-                <div><dt>Logged</dt><dd>{shown.loggedAt ? new Date(shown.loggedAt).toLocaleString() : "unknown"}</dd></div>
-              </dl>
-
-              <ul className="check-list">
-                {(checks ?? []).map((check) => (
-                  <li key={check.id} className={check.status}>
-                    {check.status === "pass" ? <CircleCheck size={17} /> : check.status === "fail" ? <CircleX size={17} /> : <CircleMinus size={17} />}
-                    <span><strong>{check.label}</strong><small>{check.detail}</small></span>
-                  </li>
-                ))}
-              </ul>
-
-              <div className="verify-actions">
-                {tampered ? (
-                  <button type="button" className="ghost-button" onClick={() => setTampered(undefined)}>
-                    <RotateCcw size={14} /> Restore the original
-                  </button>
-                ) : (
-                  <button type="button" className="ghost-button" onClick={() => setTampered(tamper(loaded.original))}>
-                    <Swords size={14} /> Tamper with it
-                  </button>
-                )}
-                <button type="button" className="ghost-button" onClick={() => download(loaded.original, loaded.run)}>
-                  <Download size={14} /> Download with public key
-                </button>
               </div>
             </>
           )}
-        </div>
-      </section>
-    </main>
+        </section>
+      </div>
+    </div>
   );
 }
