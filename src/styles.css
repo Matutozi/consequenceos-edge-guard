@@ -359,3 +359,12 @@ a.btn { text-decoration: none; }
 .pairing-panel ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .pairing-panel li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
 .pairing p { margin: 0; }
+
+/* Evals: the plain-language summary for readers who are not technical. */
+.plain-summary { display: grid; gap: 10px; }
+.plain-summary p { margin: 0; }
+.plain-summary ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; line-height: 1.5; }
+.plain-headline { font-size: 1.05rem; font-weight: 600; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border, transparent); }
+.plain-headline.good { color: var(--allow); background: var(--allow-bg); border-color: var(--allow-border); }
+.plain-headline.bad { color: var(--deny); background: var(--deny-bg); border-color: var(--deny-border); }
+.plain-bottom { font-weight: 500; }

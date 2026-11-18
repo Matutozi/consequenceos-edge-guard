@@ -3,6 +3,7 @@ import { LoaderCircle, Play } from "lucide-react";
 import { evalCases } from "../../evals/cases";
 import { saveLastRun } from "../../evals/assessmentStore";
 import { assessmentsFrom } from "../../evals/preview";
+import { plainSummary } from "../../evals/plainSummary";
 import { groupSummaries, runEvals, summarize, toMarkdown, type EvalResult, type EvalRoute, type Summary } from "../../evals/runEvals";
 import { PLANNER_MODEL } from "../../ops/planner";
 import { createSigner } from "../../ops/signing";
@@ -82,6 +83,7 @@ export default function EvalsPage() {
   const groups = groupSummaries(results);
   const all = summarize(results);
   const ordered = [...results].sort((a, b) => a.case.id.localeCompare(b.case.id));
+  const plain = results.length > 0 ? plainSummary(results, route, total) : undefined;
 
   return (
     <div className="page">
@@ -137,6 +139,17 @@ export default function EvalsPage() {
           {!deviceReady && <DeviceModelPanel model={deviceModel} disabled={running} />}
         </div>
       </section>
+
+      {plain && (
+        <section className="card" style={{ marginTop: 16 }} aria-label="What this means">
+          <div className="card-header">What this means, in plain words</div>
+          <div className="card-body plain-summary">
+            <p className={`plain-headline ${plain.tone}`}>{plain.headline}</p>
+            <ul>{plain.points.map((point) => <li key={point}>{point}</li>)}</ul>
+            <p className="plain-bottom">{plain.bottomLine}</p>
+          </div>
+        </section>
+      )}
 
       {results.length > 0 && (
         <section className="card" style={{ marginTop: 16 }} aria-live="polite" aria-label="Summary">

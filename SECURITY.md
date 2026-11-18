@@ -10,8 +10,8 @@ repository owner with a description, reproduction steps, and potential impact.
 - The agent supplies only a tool name, arguments and a reason. Sensitivity,
   reversibility, egress and fanout come from the tool registry, never from the agent.
 - Rules run before any model: the egress rule, hard rules (restricted data that cannot
-  be undone is blocked; unknown tools are the worst case), the fanout rule and the fast
-  path. Model output cannot downgrade them.
+  be undone is blocked; unknown tools are the worst case), the fanout rule, the fast
+  path, and a rule that sends any call addressing the assessor to a person. Model output cannot downgrade them.
 - AI output is untrusted and schema-validated. A deterministic policy function, not the
   model, decides allow, approval or block.
 - No cloud model sees a call on confidential or restricted data. Without Gemini Nano,

@@ -41,7 +41,7 @@ export function previewDraft(draft: PolicyDraft, recorded: Record<string, RiskAs
   // Eval-only tools are not part of the draft; the draft's own tools take their place.
   const registry = { ...draft.registry, ...evalTools };
   return cases.map((c) => {
-    const call = { tool: c.tool, args: c.args };
+    const call = { tool: c.tool, args: c.args, reason: c.reason };
     const ruled = decideByRules(call, registry, draft.internalDomains, draft.policy);
     if (ruled) {
       return { case: c, decision: ruled.decision, verdict: score(c.expected, ruled.decision), decidedBy: "rule", reason: ruled.rationale[0] };

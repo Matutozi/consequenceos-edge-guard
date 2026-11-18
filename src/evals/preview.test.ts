@@ -41,11 +41,13 @@ describe("previewDraft", () => {
 
   it("shows when a registry edit moves a case from a rule to the assessor", () => {
     const noFanout = { ...live, registry: { ...defaultRegistry, revoke_sessions: { ...defaultRegistry.revoke_sessions, fanout: undefined } } };
-    const m20 = row(previewDraft(noFanout, {}), "M20");
-    expect(m20.decidedBy).toBe("none");
-    expect(m20.verdict).toBe("needs-assessment");
-    // With the assessment the first cloud run actually recorded, it is the original false allow.
-    expect(row(previewDraft(noFanout, { M20: assessed("low", "single_user") }), "M20").verdict).toBe("false-allow");
+    const m02 = row(previewDraft(noFanout, {}), "M02");
+    expect(m02.decidedBy).toBe("none");
+    expect(m02.verdict).toBe("needs-assessment");
+    // Rated low for one user, as the first cloud run rated M20, it is a false allow.
+    expect(row(previewDraft(noFanout, { M02: assessed("low", "single_user") }), "M02").verdict).toBe("false-allow");
+    // M20 itself stays caught without the fanout rule: its reason addresses the assessor.
+    expect(row(previewDraft(noFanout, {}), "M20")).toMatchObject({ decidedBy: "rule", verdict: "pass" });
   });
 
   it("counts every case", () => {

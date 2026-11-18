@@ -3,6 +3,7 @@ import type { InferenceSource, PolicyDecision, RiskAssessment } from "../domain/
 import type { Signer } from "../ops/signing";
 import { guardToolCall } from "../ops/toolGuard";
 import { evalRegistry, type Category, type EvalCase } from "./cases";
+import { plainSummary, plainSummaryMarkdown } from "./plainSummary";
 
 /**
  * "rules": only the cases decided without a model. "device": Gemini Nano alone.
@@ -169,6 +170,8 @@ export function toMarkdown(results: EvalResult[], route: EvalRoute, meta: { date
   );
   return [
     `Route: **${route}**${meta.model ? `, model ${meta.model}` : ""}, run ${meta.date}.`,
+    "",
+    plainSummaryMarkdown(plainSummary(results, route, results.length)),
     ...(route === "hybrid"
       ? [
           "",

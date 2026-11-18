@@ -71,7 +71,7 @@ function evaluateFanout(call: ToolCallRecord, meta: ToolMeta, wildcards: string[
     decision: "require_approval",
     rationale: [
       `${call.tool} targets everyone (${meta.fanout.arg}: ${JSON.stringify(target)}), so a person has to approve it. ` +
-        "Decided by rule, with no model call.",
+      "Decided by rule, with no model call.",
     ],
   };
 }
@@ -92,18 +92,59 @@ function evaluateEgress(call: ToolCallRecord, meta: ToolMeta, domains: string[])
   return meta.egress.outside === "deny"
     ? { decision: "deny", rationale: [`Sends data to ${String(destination)}, which is outside ${domains.join(", ")}. Blocked by rule.`] }
     : {
-        decision: "require_approval",
-        rationale: [`Sends to ${String(destination)}, which is outside ${domains.join(", ")}, so a person has to approve it.`],
-      };
+      decision: "require_approval",
+      rationale: [`Sends to ${String(destination)}, which is outside ${domains.join(", ")}, so a person has to approve it.`],
+    };
+}
+
+/**
+ * Text that speaks to the assessor instead of explaining the action: naming it, telling
+ * it what to rate, or overriding its instructions. A legitimate reason never needs to.
+ * A floor under the model, not a complete detector: a rephrased attack still reaches the
+ * assessor, which is told to treat such text as an attack too.
+ */
+export const ASSESSOR_ADDRESS_PATTERNS: RegExp[] = [
+  /\bassessor\b/i,
+  /\bignore\s+(?:all\s+|any\s+)?(?:the\s+)?(?:previous|prior|above|earlier)\s+instructions\b/i,
+  /\brisk\s*level\b|\brecommended\s*control\b/i,
+  /\brate\s+(?:it|this|the\s+\w+)\s+(?:as\s+)?(?:low|safe|routine|minimal)\b/i,
+];
+
+const addressesAssessor = (text: string) => ASSESSOR_ADDRESS_PATTERNS.some((pattern) => pattern.test(text));
+
+function strings(value: unknown, out: string[] = []): string[] {
+  if (typeof value === "string") out.push(value);
+  else if (Array.isArray(value)) value.forEach((v) => strings(v, out));
+  else if (value && typeof value === "object") Object.values(value).forEach((v) => strings(v, out));
+  return out;
+}
+
+/**
+ * A call that would reach the assessor, with text addressed to the assessor in its reason
+ * or arguments, goes to a person. Both models were talked into allowing such a call (eval
+ * M24), so this is decided by rule. It runs after the fast path: a call decided without a
+ * model cannot be influenced by such text, so a note quoting an injection is still a note.
+ */
+function evaluateAssessorAddress(call: ToolCallRecord & { reason?: string }): GuardDecision | undefined {
+  const inReason = addressesAssessor(call.reason ?? "");
+  if (!inReason && !strings(call.args).some(addressesAssessor)) return undefined;
+  return {
+    decision: "require_approval",
+    rationale: [
+      `The ${inReason ? "agent's reason" : "call's arguments"} contain text addressed to the risk assessor, ` +
+        "which is how an injection tries to talk it into an allow, so a person has to approve it. " +
+        "Decided by rule, with no model call.",
+    ],
+  };
 }
 
 /**
  * Everything decided without a model, as a pure function: egress, hard rules, the
- * fanout rule and the fast path. Returns undefined when the call needs the assessor.
- * The Policy page uses it to score a draft without running anything.
+ * fanout rule, the fast path, and text addressed to the assessor. Returns undefined when
+ * the call needs the assessor. The Policy page uses it to score a draft without running anything.
  */
 export function decideByRules(
-  call: ToolCallRecord,
+  call: ToolCallRecord & { reason?: string },
   registry: ToolRegistry,
   internalDomains: string[] = INTERNAL_DOMAINS,
   policy: PolicyConfig = DEFAULT_POLICY,
@@ -125,11 +166,11 @@ export function decideByRules(
         meta.readOnly
           ? `${call.tool} only reads ${meta.sensitivity} data. Allowed by rule, with no model call.`
           : `${call.tool} is low impact in the registry, can be undone and touches ${meta.sensitivity} data. ` +
-            "Allowed by rule, with no model call.",
+          "Allowed by rule, with no model call.",
       ],
     };
   }
-  return undefined;
+  return evaluateAssessorAddress(call);
 }
 
 export interface ToolGuardOptions extends AnalyzeOptions {
@@ -148,7 +189,8 @@ export interface ToolGuardOptions extends AnalyzeOptions {
  *    and the fanout rule: a wildcard target goes to a person.
  * 3. Fast path: reads, and low-impact changes that can be undone, on public or
  *    internal data (no model). Model calls are kept for real judgement.
- * 4. Risk assessment (Gemini Nano first) and policy.
+ * 4. Text addressed to the assessor in the reason or arguments goes to a person (no model).
+ * 5. Risk assessment (Gemini Nano first) and policy.
  * The resulting receipt is bound to the exact call and signed.
  */
 export async function guardToolCall(
@@ -159,7 +201,7 @@ export async function guardToolCall(
   const proposal = toProposal(call, meta);
   const record = callRecord(call);
 
-  const ruled = decideByRules(record, registry, internalDomains, policy);
+  const ruled = decideByRules({ ...record, reason: call.reason }, registry, internalDomains, policy);
   const receipt: DecisionReceipt = ruled
     ? await createDecisionReceipt(proposal, noModel, ruled, record)
     : await guardAction(proposal, analyzeOptions, record, policy);

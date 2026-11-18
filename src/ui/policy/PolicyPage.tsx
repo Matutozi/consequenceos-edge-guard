@@ -24,6 +24,7 @@ const FLOOR = [
   "Each tool's egress setting applies to destinations outside the internal domains.",
   "No cloud model sees a call on confidential or restricted data.",
   "If the assessor can't run or doesn't answer in time, a person decides.",
+  "A call whose reason or arguments speak to the assessor (naming it, or telling it what to rate) goes to a person.",
 ];
 
 function loadDraft(): PolicyDraft | undefined {
