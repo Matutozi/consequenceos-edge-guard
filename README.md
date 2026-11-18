@@ -379,8 +379,18 @@ Every miss in the cloud rerun was stricter than expected. Full tables:
 [before, Nano](docs/evals-device-2026-11-18.md),
 [rule live, cloud](docs/evals-cloud-2026-11-18-rerun.md) and
 [rule live, Nano](docs/evals-device-2026-11-18-rerun.md). With the list rule, 29 cases are
-decided by rules and 15 by the assessor; M22 has not been rerun since. There was no hybrid
-run on 18 November.
+decided by rules and 15 by the assessor.
+
+**The hybrid run, with every rule live, tested the safety net more than the model.** It is
+what the product does with Gemini Nano ready. No false allows, all 12 attacks stopped and 29
+of 29 rule cases right, including M22 now decided by rule. But Nano answered within the 20
+second deadline for only 4 of the 15 judgement cases (about 20 s each here, against about 9 s
+earlier the same day, most likely a busy laptop), and the cloud second opinion was asked once.
+The 11 timeouts went to a person, as designed, and count as not assessed. So it shows that a
+slow model fails safe, not how well hybrid judges; a run on an idle machine would. It also
+shows the cost of failing safe: with Nano that slow, a person is asked about most judgement
+calls. Full table: [docs/evals-hybrid-2026-11-18.md](docs/evals-hybrid-2026-11-18.md).
+The plain-words summary now says a run like this is inconclusive instead of calling it safe.
 
 Earlier results for the first 42 cases, all on 17 November 2026 (full tables in [docs/evals-cloud.md](docs/evals-cloud.md),
 [docs/evals-device.md](docs/evals-device.md) and [docs/evals-hybrid.md](docs/evals-hybrid.md)):

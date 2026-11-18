@@ -42,6 +42,15 @@ describe("plainSummary", () => {
     expect(s.points.join(" ")).toMatch(/could not be checked by the AI in time/);
   });
 
+  it("calls a run inconclusive, not safe, when the AI mostly did not answer", () => {
+    const timedOut = (id: string): EvalResult => ({ case: byId(id), verdict: "not-assessed", actual: "require_approval", ms: 20000 });
+    const results = [result("R05", "deny", 1), timedOut("M09"), timedOut("M10"), result("M07", "allow")];
+    const s = plainSummary(results, "hybrid", results.length);
+    expect(s.tone).toBe("partial");
+    expect(s.headline).toMatch(/says little about the AI: it did not answer in time for 2 of the 3 actions/);
+    expect(s.bottomLine).not.toMatch(/it was safe/);
+  });
+
   it("uses no jargon", () => {
     const s = plainSummary(evalCases.map((c) => result(c.id, c.expected)), "hybrid", evalCases.length);
     const text = plainSummaryMarkdown(s);

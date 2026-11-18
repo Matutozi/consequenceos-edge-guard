@@ -368,3 +368,4 @@ a.btn { text-decoration: none; }
 .plain-headline.good { color: var(--allow); background: var(--allow-bg); border-color: var(--allow-border); }
 .plain-headline.bad { color: var(--deny); background: var(--deny-bg); border-color: var(--deny-border); }
 .plain-bottom { font-weight: 500; }
+.plain-headline.partial { color: var(--review); background: var(--review-bg); border-color: var(--review-border); }
