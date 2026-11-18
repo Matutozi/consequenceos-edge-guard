@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDecisionReceipt } from "../domain/receipt";
-import { toReceiptDoc } from "./receiptLog";
+import { entryMessage, signedReceiptDoc, toReceiptDoc } from "./receiptLog";
 import { createSigner, verifyWithPublicKey } from "./signing";
 import { approveReceipt, receiptMessage } from "./toolGuard";
 
@@ -25,6 +25,16 @@ describe("audit log documents", () => {
     expect(doc.signature).toMatch(/^[0-9a-f]{128}$/);
     expect(doc.approval?.signature).toMatch(/^[0-9a-f]{128}$/);
     expect(JSON.stringify(doc)).not.toContain("undefined");
+  });
+
+  it("are signed by the run's key, over the outcome and approval too", async () => {
+    const { signer, signed } = await signedReceipt();
+    const doc = await signedReceiptDoc("11111111-2222-4333-8444-555555555555", signed, undefined, "rejected", signer);
+    expect(Object.keys(doc).sort()).toEqual(["approval", "outcome", "outcomeSignature", "receipt", "runId", "signature"]);
+    expect(doc.outcomeSignature).toMatch(/^[0-9a-f]{128}$/);
+    const jwk = await signer.publicKeyJwk();
+    expect(await verifyWithPublicKey(jwk, entryMessage(doc), doc.outcomeSignature!)).toBe(true);
+    expect(await verifyWithPublicKey(jwk, entryMessage({ ...doc, outcome: "executed" }), doc.outcomeSignature!)).toBe(false);
   });
 
   it("stores null, not undefined, when there is no approval", async () => {

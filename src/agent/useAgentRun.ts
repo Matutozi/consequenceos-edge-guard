@@ -20,7 +20,7 @@ import {
   type PlannedStep,
 } from "../ops/northwind";
 import { createLivePlanner, createRecordedPlanner, type ToolOutcome } from "../ops/planner";
-import { receiptLog, toReceiptDoc, type StepOutcome } from "../ops/receiptLog";
+import { receiptLog, signedReceiptDoc, type StepOutcome } from "../ops/receiptLog";
 import { loadToolRegistry, type LoadedRegistry } from "../ops/registryConfig";
 import { createSigner } from "../ops/signing";
 import {
@@ -35,6 +35,8 @@ import {
 
 export const APPROVER = { id: "mei.lin", name: "Mei Lin", role: "IT administrator" };
 const STEP_PAUSE_MS = 450;
+/** All the planner is told about a refusal. */
+export const REFUSED_FOR_PLANNER = "Edge Guard refused this call. Do not retry it or try to reach the same result another way.";
 const MAX_TOOL_CALLS = 12;
 
 export type PlannerMode = "live" | "recorded";
@@ -161,7 +163,8 @@ export function useAgentRun(): AgentRun {
       function logStep(index: number, signed: SignedReceipt, approval: Approval | undefined, outcome: StepOutcome) {
         updateStep(index, { logged: "pending" });
         runLogged
-          .then(() => receiptLog.record(toReceiptDoc(runUuid, signed, approval, outcome)))
+          .then(() => signedReceiptDoc(runUuid, signed, approval, outcome, signer))
+          .then((doc) => receiptLog.record(doc))
           .then(
             () => live() && updateStep(index, { logged: "saved" }),
             () => live() && updateStep(index, { logged: "failed" }),
@@ -325,9 +328,15 @@ export function useAgentRun(): AgentRun {
           const message = caught instanceof Error ? caught.message : "The tool failed.";
           const refused = caught instanceof ExecutionRefused;
           if (live()) updateStep(index, { phase: refused ? "refused" : "error", error: message });
-          const reasons = refused ? ` ${signed.receipt.decision.rationale.join(" ")}` : "";
+          // The planner learns that a call was refused, never why: the rationale names the rule
+          // that fired (for example the allowed domains), which a hijacked agent could use to
+          // search for a way around it. The reasons stay in the receipt and the inspector.
           return {
-            outcome: { tool: call.tool, status: refused ? "refused" : "error", detail: `${message}${reasons}` },
+            outcome: {
+              tool: call.tool,
+              status: refused ? "refused" : "error",
+              detail: refused ? REFUSED_FOR_PLANNER : "The tool failed.",
+            },
             approval,
           };
         }

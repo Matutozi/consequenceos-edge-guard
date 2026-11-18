@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createDecisionReceipt } from "../domain/receipt";
 import type { PolicyDecision } from "../domain/types";
-import { toReceiptDoc, type RunDoc, type StepOutcome } from "./receiptLog";
+import { signedReceiptDoc, toReceiptDoc, type ReceiptDoc, type RunDoc, type StepOutcome } from "./receiptLog";
 import { createSigner } from "./signing";
 import { approveReceipt, receiptMessage } from "./toolGuard";
-import { allPassed, checkLoggedReceipt, checkPastedReceipt } from "./verifyLogged";
+import { allPassed, checkLoggedReceipt, checkPastedReceipt, resolveLogEntry } from "./verifyLogged";
 
-async function logged(decision: PolicyDecision, outcome: StepOutcome, approve = false) {
+async function logged(decision: PolicyDecision, outcome: StepOutcome, approve = false, runId = "run") {
   const signer = await createSigner();
   const receipt = await createDecisionReceipt(
     { actor: "a", action: "x", target: "t", context: "c", dataSensitivity: "internal", reversible: true },
@@ -18,7 +18,8 @@ async function logged(decision: PolicyDecision, outcome: StepOutcome, approve = 
   const approval = approve ? await approveReceipt(signed, "mei.lin", signer) : undefined;
   const run: RunDoc = { agent: "a", planner: "recorded", publicKey: await signer.publicKeyJwk() };
   // Round-trip like a Firestore read.
-  return { doc: JSON.parse(JSON.stringify(toReceiptDoc("run", signed, approval, outcome))), run };
+  const doc = JSON.parse(JSON.stringify(await signedReceiptDoc(runId, signed, approval, outcome, signer)));
+  return { doc, run, signer, signed };
 }
 
 const status = (checks: Awaited<ReturnType<typeof checkLoggedReceipt>>, id: string) =>
@@ -102,6 +103,64 @@ describe("checkLoggedReceipt", () => {
   });
 });
 
+describe("signed log entries", () => {
+  it("fails the genuine receipt logged by someone else with a false outcome", async () => {
+    // The attack: the receipt is public in the approval request before it is logged, so
+    // anyone can log it as "rejected" with no approval, although it was approved and ran.
+    const { doc, run } = await logged("require_approval", "executed", true);
+    const squat: ReceiptDoc = { ...doc, approval: null, outcome: "rejected", outcomeSignature: undefined };
+    const checks = await checkLoggedReceipt(squat, run);
+    expect(status(checks, "outcome")).toBe("pass");
+    expect(status(checks, "entry")).toBe("fail");
+    expect(allPassed(checks)).toBe(false);
+    // Reusing the genuine entry's signature does not help: it covers the real outcome.
+    expect(status(await checkLoggedReceipt({ ...squat, outcomeSignature: doc.outcomeSignature }, run), "entry")).toBe("fail");
+  });
+
+  it("fails an entry whose outcome or approval changed after logging", async () => {
+    const { doc, run } = await logged("require_approval", "executed", true);
+    expect(status(await checkLoggedReceipt({ ...doc, outcome: "error" }, run), "entry")).toBe("fail");
+    expect(status(await checkLoggedReceipt({ ...doc, approval: null }, run), "entry")).toBe("fail");
+    expect(status(await checkLoggedReceipt({ ...doc, runId: "other" }, run), "entry")).toBe("fail");
+  });
+
+  it("does not pass an unsigned entry from before entries were signed", async () => {
+    const { signed, run } = await logged("allow", "executed");
+    const legacy = JSON.parse(JSON.stringify(toReceiptDoc("run", signed, undefined, "executed")));
+    expect(status(await checkLoggedReceipt(legacy, run), "entry")).toBe("fail");
+  });
+
+  it("picks the signed entry, whatever was logged before it", async () => {
+    const { doc, run } = await logged("require_approval", "executed", true);
+    const squat: ReceiptDoc = { ...doc, approval: null, outcome: "rejected", outcomeSignature: undefined };
+    const resolved = await resolveLogEntry([squat, doc], { run: async () => run });
+    expect(resolved?.doc.outcome).toBe("executed");
+    expect(resolved?.ignored).toBe(1);
+    expect(resolved?.rivalRuns).toEqual([]);
+    expect(allPassed(await checkLoggedReceipt(resolved!.doc, resolved!.run, undefined, resolved!.rivalRuns))).toBe(true);
+  });
+
+  it("shows a conflict, never a pass, when another run re-signs a copy of the receipt", async () => {
+    const { doc, run, signed } = await logged("require_approval", "executed", true, "genuine");
+    const attacker = await createSigner();
+    const copied = { receipt: signed.receipt, signature: await attacker.sign(receiptMessage(signed.receipt)) };
+    const copy = JSON.parse(JSON.stringify(await signedReceiptDoc("forged", copied, undefined, "rejected", attacker)));
+    const runs: Record<string, RunDoc> = { genuine: run, forged: { ...run, publicKey: await attacker.publicKeyJwk() } };
+    const resolved = await resolveLogEntry([copy, doc], { run: async (id) => runs[id] });
+    expect(resolved?.rivalRuns).toHaveLength(1);
+    const checks = await checkLoggedReceipt(resolved!.doc, resolved!.run, undefined, resolved!.rivalRuns);
+    expect(status(checks, "unique")).toBe("fail");
+    expect(allPassed(checks)).toBe(false);
+  });
+
+  it("returns the earliest entry when none verifies, so its failures can be shown", async () => {
+    const { doc, run } = await logged("allow", "executed");
+    const resolved = await resolveLogEntry([{ ...doc, outcomeSignature: undefined }], { run: async () => run });
+    expect(resolved?.ignored).toBe(0);
+    expect(await resolveLogEntry([], { run: async () => run })).toBeUndefined();
+  });
+});
+
 describe("checkPastedReceipt", () => {
   async function signedFile() {
     const { doc, run } = await logged("deny", "refused");
@@ -110,14 +169,14 @@ describe("checkPastedReceipt", () => {
 
   it("verifies a downloaded receipt against the key in the audit log", async () => {
     const { doc, run, text } = await signedFile();
-    const result = await checkPastedReceipt(text, { run: async () => run, receipt: async () => doc });
+    const result = await checkPastedReceipt(text, { run: async () => run, receipt: async () => [doc] });
     expect(result.kind).toBe("signed");
     expect(allPassed(result.checks)).toBe(true);
   });
 
   it("does not trust a key that only exists inside the file", async () => {
     const { text } = await signedFile();
-    const result = await checkPastedReceipt(text, { run: async () => undefined, receipt: async () => undefined });
+    const result = await checkPastedReceipt(text, { run: async () => undefined, receipt: async () => [] });
     expect(result.checks.find((c) => c.id === "origin")?.status).toBe("fail");
     expect(allPassed(result.checks)).toBe(false);
   });
@@ -126,7 +185,7 @@ describe("checkPastedReceipt", () => {
     const { doc, run } = await signedFile();
     const { doc: forged, run: forgerRun } = await logged("allow", "executed");
     const text = JSON.stringify({ ...forged, runId: doc.runId, receipt: { ...forged.receipt, id: doc.receipt.id }, publicKey: forgerRun.publicKey });
-    const result = await checkPastedReceipt(text, { run: async () => run, receipt: async () => doc });
+    const result = await checkPastedReceipt(text, { run: async () => run, receipt: async () => [doc] });
     expect(result.checks.find((c) => c.id === "origin")?.status).toBe("fail");
     expect(result.checks.find((c) => c.id === "signature")?.status).toBe("fail");
     expect(result.checks.find((c) => c.id === "log-copy")?.status).toBe("fail");
@@ -142,15 +201,15 @@ describe("checkPastedReceipt", () => {
 
   it("checks a single-action receipt by digest and says it is not signed", async () => {
     const { doc } = await logged("allow", "executed");
-    const ok = await checkPastedReceipt(JSON.stringify(doc.receipt), { run: async () => undefined, receipt: async () => undefined });
+    const ok = await checkPastedReceipt(JSON.stringify(doc.receipt), { run: async () => undefined, receipt: async () => [] });
     expect(ok.kind).toBe("digest-only");
     expect(allPassed(ok.checks)).toBe(true);
-    const tampered = await checkPastedReceipt(JSON.stringify({ ...doc.receipt, decision: { decision: "deny", rationale: [] } }), { run: async () => undefined, receipt: async () => undefined });
+    const tampered = await checkPastedReceipt(JSON.stringify({ ...doc.receipt, decision: { decision: "deny", rationale: [] } }), { run: async () => undefined, receipt: async () => [] });
     expect(allPassed(tampered.checks)).toBe(false);
   });
 
   it("rejects text that is not a receipt", async () => {
-    const lookup = { run: async () => undefined, receipt: async () => undefined };
+    const lookup = { run: async () => undefined, receipt: async () => [] };
     await expect(checkPastedReceipt("{nope", lookup)).rejects.toThrow(/not valid JSON/);
     await expect(checkPastedReceipt('{"hello":1}', lookup)).rejects.toThrow(/doesn't look like/);
   });

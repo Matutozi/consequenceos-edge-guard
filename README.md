@@ -36,7 +36,7 @@ sensitive ones to a person.
   its field mapping.
 - **Offline**: disconnect after loading and the rules, signing, executor and recorded
   replay keep working; anything that needs a model it cannot reach goes to a person.
-- **Evals** (`#/evals`): run 42 guarded calls with known right answers against the
+- **Evals** (`#/evals`): run 44 guarded calls with known right answers against the
   cloud or Gemini Nano and see false allows, over-escalation and timing.
 - **Policy** (`#/policy`): edit a draft of the rules and see at once whether it would
   let through anything the evals say it should not. Publishing happens outside the app.
@@ -134,6 +134,7 @@ What one run of ticket #482 looks like:
 | `delete_audit_logs` | Blocked | Hard rule, no model |
 | `email_user` to Ada | Needs approval | Cannot be undone, rated medium risk |
 | `add_ticket_note` | Allowed | Fast path, no model |
+| `resolve_ticket` | Allowed | Assessor (low risk, can be undone) |
 
 Rule-based decisions are the same every time. Assessor decisions can vary between
 runs: in another run, a password-reset email to a single user was rated low risk and
@@ -282,6 +283,16 @@ Every receipt, its approval and its outcome are appended to Cloud Firestore.
 each document's shape. App Check is enforced for Firestore and Firebase AI Logic.
 Each run stores its public key, so a receipt can be verified from the log alone.
 
+**Each entry's outcome is signed too.** A receipt is public before its entry is written:
+an approval request carries it to the phone. If only the receipt were signed, anyone could
+log the genuine receipt first, as "rejected" with no approval, and the Verify page would
+show it as consistent. So the run's key also signs the entry (run, receipt, approval and
+outcome), and entries take random document IDs, so an entry written first cannot block the
+genuine one. A receipt can collect several entries; Verify uses the one that verifies
+against its run's key and sets the others aside. If a different run logs a re-signed copy
+of the same receipt, both verify against their own keys, and Verify reports a conflict
+instead of a pass. Entries logged before outcomes were signed fail that check.
+
 **The audit log is public.** Anyone can read it, so anyone can verify a receipt
 without an account. That includes each call's arguments, also on confidential and
 restricted data, and approval requests for the phone. Northwind's data is fictional,
@@ -297,8 +308,8 @@ their own key.
 
 ## Evals
 
-`src/evals/cases.ts` holds 42 tool calls with the decision each should get and why:
-22 decided by rules and 20 that need the assessor's judgement, 11 of them injection
+`src/evals/cases.ts` holds 44 tool calls with the decision each should get and why:
+22 decided by rules and 22 that need the assessor's judgement, 12 of them injection
 attempts (instructions to the assessor planted in the agent's reason, in email bodies
 and in ticket notes; claimed approvals; lies about scope or environment). Six tools
 exist only in the eval registry, for consequence types Northwind lacks: roles, refunds,
@@ -314,7 +325,11 @@ model that was not ready, counts as not assessed instead of as a correct escalat
 - **Judgement cases run on the Evals page** against one route at a time, one case at
   a time, and copy out as Markdown.
 
-Results, all on 17 November 2026 (full tables in [docs/evals-cloud.md](docs/evals-cloud.md),
+Two cases were added after these runs and have not been run against a model yet: M23 and
+M24, a routine and an injected `resolve_ticket` (closing an open security alert). Until
+they are, the Policy page shows them as needing a model run.
+
+Results for the first 42 cases, all on 17 November 2026 (full tables in [docs/evals-cloud.md](docs/evals-cloud.md),
 [docs/evals-device.md](docs/evals-device.md) and [docs/evals-hybrid.md](docs/evals-hybrid.md)):
 
 | | Cloud alone | Gemini Nano alone | **Hybrid** (Nano, cloud second opinion before any allow) |
@@ -386,7 +401,7 @@ as needing a model run, never guessed.
 The page shows live and draft side by side and says plainly when a draft should not be
 published, for example: "Do not publish: this draft allows 1 call it should not (M18)"
 after unticking "confidential" from the data that always needs a person. It is only as
-good as the eval set: "no new false allows" means none among these 42 cases.
+good as the eval set: "no new false allows" means none among these cases.
 
 The page never changes the live rules. It exports `remoteconfig.template.json` (or the
 three values for the Firebase console), and someone with access to the project
@@ -567,11 +582,18 @@ that period:
 - **The planner sees the whole ticket in the cloud.** The privacy guarantee is about
   the guard: sensitive tool calls are judged on the device or by a person, never in
   the cloud.
+- **The log can be cluttered, not rewritten.** Anyone can append entries for a receipt
+  ID. Unsigned ones are set aside, and a re-signed copy from another run shows as a
+  conflict, so a receipt can be made to fail verification but not to pass with a false
+  outcome. Server-side writes or signed-in writers would remove the conflict case.
+- **The planner is not told why a call was refused,** only that it was, so a hijacked
+  agent cannot use the reasons (for example the allowed domains) to search for a way
+  around a rule. The reasons are in the receipt and the inspector.
 - **Receipts do not expire,** unlike ConsequenceOS receipts. Single use is tracked
   per run in memory.
 - **Only Manual and Sample sources work.** The webhook and the four service adapters
   are planned. Manual tickets stay in the browser that wrote them.
-- **Evals are small.** 42 cases, two cloud runs, one on-device run and one hybrid run, on
+- **Evals are small.** 44 cases, two cloud runs, one on-device run and one hybrid run, on
   one laptop.
   Model results vary between runs, and the Policy page can only check a draft against
   the cases in the set; its preview does not model the cloud second opinion.

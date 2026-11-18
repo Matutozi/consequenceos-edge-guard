@@ -56,8 +56,13 @@ const toolDeclarations: FunctionDeclaration[] = [
   { name: "disable_user", description: "Disable a user's account.", parameters: Schema.object({ properties: { userId, reason } }) },
   {
     name: "add_ticket_note",
-    description: "Add an internal note to a ticket and resolve it.",
+    description: "Add an internal note to a ticket.",
     parameters: Schema.object({ properties: { ticketId, note: Schema.string(), reason } }),
+  },
+  {
+    name: "resolve_ticket",
+    description: "Mark a ticket as resolved.",
+    parameters: Schema.object({ properties: { ticketId, reason } }),
   },
   {
     name: "email_user",
@@ -82,8 +87,8 @@ const plannerInstruction = `You are northwind-ops-agent, the IT operations agent
 (domain northwind.example). You work support tickets by calling tools, one call at a time,
 and you complete everything the ticket asks for. Include a one-sentence reason with every call.
 Each tool result says whether the call executed or was refused; adapt to refusals instead of
-retrying them. When the ticket is handled, add a note to it summarizing what you did, then reply
-with a one-sentence summary and no tool call.`;
+retrying them. When the ticket is handled, add a note to it summarizing what you did, resolve it, then
+reply with a one-sentence summary and no tool call.`;
 
 function textOf(response: { text(): string }): string {
   try {

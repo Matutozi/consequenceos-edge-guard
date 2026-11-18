@@ -14,7 +14,14 @@ import {
 import { canonicalJson } from "../domain/receipt";
 import { approvalStore, type ApproverDoc } from "../ops/approvals";
 import { receiptLog, type LoggedReceipt, type RunDoc } from "../ops/receiptLog";
-import { allPassed, checkLoggedReceipt, checkPastedReceipt, type Check, type PastedCheck } from "../ops/verifyLogged";
+import {
+  allPassed,
+  checkLoggedReceipt,
+  checkPastedReceipt,
+  resolveLogEntry,
+  type Check,
+  type PastedCheck,
+} from "../ops/verifyLogged";
 import { decisionBadge, decisionLabel, receiptRoute } from "../ui/format";
 
 interface Loaded {
@@ -22,6 +29,10 @@ interface Loaded {
   run?: RunDoc;
   /** The phone's registered key, when a phone signed the approval. */
   approver?: ApproverDoc;
+  /** Other runs with a validly signed entry for the same receipt ID. */
+  rivalRuns: string[];
+  /** Entries for this receipt ID that failed verification and were set aside. */
+  ignored: number;
 }
 
 
@@ -87,12 +98,10 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
     setLoading(true);
     setError("");
     (async () => {
-      const original = await receiptLog.getReceipt(receiptId);
-      if (!original) throw new Error(`No receipt with ID ${receiptId} is in the audit log.`);
-      const run = await receiptLog.getRun(original.runId);
-      const keyId = original.approval?.keyId;
-      const approver = keyId ? await approvalStore.getApprover(keyId).catch(() => undefined) : undefined;
-      return { original, run, approver };
+      const resolved = await resolveLogEntry(await receiptLog.getEntries(receiptId), auditLookup);
+      if (!resolved) throw new Error(`No receipt with ID ${receiptId} is in the audit log.`);
+      const { doc, ...rest } = resolved;
+      return { original: doc as LoggedReceipt, ...rest };
     })().then(
       (result) => current && setLoaded(result),
       (caught: unknown) => {
@@ -109,7 +118,9 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
   useEffect(() => {
     if (!loaded) return;
     let current = true;
-    void checkLoggedReceipt(tampered?.doc ?? loaded.original, loaded.run, loaded.approver).then((c) => current && setChecks(c));
+    void checkLoggedReceipt(tampered?.doc ?? loaded.original, loaded.run, loaded.approver, loaded.rivalRuns).then(
+      (c) => current && setChecks(c),
+    );
     return () => {
       current = false;
     };
@@ -193,6 +204,13 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
                 <span className="quiet">{tampered ? "Tampered local copy" : "From the audit log"}</span>
               </div>
               <div className="card-body">
+                {!tampered && loaded.ignored > 0 && (
+                  <div className="notice notice-review">
+                    The log holds {loaded.ignored} other {loaded.ignored === 1 ? "entry" : "entries"} for this receipt that{" "}
+                    {loaded.ignored === 1 ? "does" : "do"} not verify. Anyone can append to the log, so{" "}
+                    {loaded.ignored === 1 ? "it was" : "they were"} set aside; only an entry signed by the run's key counts.
+                  </div>
+                )}
                 {tampered && (
                   <div className="notice notice-review">
                     {tampered.change} Nothing was written: the audit log can't be edited. This shows what the checks catch.
@@ -283,7 +301,7 @@ function CheckList({ checks }: { checks: Check[] }) {
 const auditLookup = {
   run: (runId: string) => receiptLog.getRun(runId),
   approver: (keyId: string) => approvalStore.getApprover(keyId),
-  receipt: (id: string) => receiptLog.getReceipt(id),
+  receipt: (id: string) => receiptLog.getEntries(id),
 };
 
 /** Checks a receipt file someone pasted or uploaded, against the audit log where it can. */

@@ -24,7 +24,10 @@ repository owner with a description, reproduction steps, and potential impact.
   call without a valid approval.
 - Phone approvals are signed with a key in Android Keystore and accepted only from a
   phone paired in the console.
-- The audit log in Cloud Firestore is append-only by security rule. App Check is
+- The audit log in Cloud Firestore is append-only by security rule. Each entry's outcome
+  and approval are signed by the run's key, and entries take random IDs, so an entry
+  written first by someone else can neither block the genuine one nor pass verification.
+- The planner is told only that a call was refused, never which rule refused it. App Check is
   enforced for Firestore and Firebase AI Logic.
 - Hosting sends a Content Security Policy, `frame-ancestors 'none'` and
   `X-Frame-Options: DENY`, so the approval controls cannot be framed.

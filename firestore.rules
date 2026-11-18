@@ -24,19 +24,28 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    match /receipts/{receiptId} {
+    // Entries take random IDs, not the receipt's ID: a receipt is public before it is logged
+    // (an approval request carries it), so an ID derived from it could be taken first and the
+    // genuine entry refused. A receipt may collect several entries; verification uses the one
+    // whose outcome is signed by its run's key (outcomeSignature), which rules cannot check.
+    match /receipts/{entryId} {
       allow read: if true;
-      allow create: if request.resource.data.keys().hasOnly(
-            ['runId', 'receipt', 'signature', 'approval', 'outcome', 'loggedAt'])
+      allow create: if entryId.matches('^[A-Za-z0-9]{20}$')
+        && request.resource.data.keys().hasOnly(
+            ['runId', 'receipt', 'signature', 'approval', 'outcome', 'outcomeSignature', 'loggedAt'])
+        && request.resource.data.runId is string
         && exists(/databases/$(database)/documents/runs/$(request.resource.data.runId))
         && request.resource.data.receipt is map
-        && request.resource.data.receipt.id == receiptId
+        && request.resource.data.receipt.id is string
+        && request.resource.data.receipt.id.matches('^[0-9a-f-]{36}$')
         && request.resource.data.receipt.digest is string
         && request.resource.data.receipt.digest.matches('^[0-9a-f]{64}$')
         && request.resource.data.signature is string
         && request.resource.data.signature.matches('^[0-9a-f]{128}$')
         && (request.resource.data.approval == null || request.resource.data.approval is map)
         && request.resource.data.outcome in ['executed', 'refused', 'rejected', 'error']
+        && request.resource.data.outcomeSignature is string
+        && request.resource.data.outcomeSignature.matches('^[0-9a-f]{128}$')
         && request.resource.data.loggedAt == request.time;
       allow update, delete: if false;
     }

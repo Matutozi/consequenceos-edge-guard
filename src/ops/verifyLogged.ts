@@ -1,5 +1,5 @@
 import { canonicalJson, verifyReceipt } from "../domain/receipt";
-import type { ReceiptDoc, RunDoc } from "./receiptLog";
+import { entryMessage, type ReceiptDoc, type RunDoc } from "./receiptLog";
 import { verifyWithPublicKey } from "./signing";
 import { fingerprint, formatFingerprint, type ApproverDoc } from "./approvals";
 import { approvalMessage, receiptMessage } from "./toolGuard";
@@ -7,7 +7,7 @@ import { approvalMessage, receiptMessage } from "./toolGuard";
 export type CheckStatus = "pass" | "fail" | "not-applicable";
 
 export interface Check {
-  id: "origin" | "log-copy" | "digest" | "signature" | "binding" | "approval" | "outcome";
+  id: "origin" | "log-copy" | "digest" | "signature" | "binding" | "approval" | "outcome" | "entry" | "unique";
   label: string;
   status: CheckStatus;
   detail: string;
@@ -21,10 +21,15 @@ export interface Check {
  * @param approver the registered key of the phone that signed the approval, when the
  *   approval names one (`approval.keyId`). Without it, a phone approval cannot be checked.
  */
+/**
+ * @param rivalRuns other runs whose own, validly signed entries claim this receipt ID.
+ *   Normally empty; anything else means one of them is a copy.
+ */
 export async function checkLoggedReceipt(
   doc: ReceiptDoc,
   run: RunDoc | undefined,
   approver?: ApproverDoc,
+  rivalRuns: string[] = [],
 ): Promise<Check[]> {
   const { receipt } = doc;
   const checks: Check[] = [];
@@ -121,7 +126,88 @@ export async function checkLoggedReceipt(
       : (outcomeProblem ?? `Decision ${decision.replace("_", " ")}, outcome ${doc.outcome}.`),
   });
 
+  // The outcome and approval above are only claims until the run's key vouches for them:
+  // the receipt is public before it is logged, so anyone could log it with another outcome.
+  // Like the signature check, it vouches for nothing when the contents no longer match the digest.
+  const entryOk =
+    digestOk &&
+    !!run &&
+    !!doc.outcomeSignature &&
+    (await verifyWithPublicKey(run.publicKey, entryMessage(doc), doc.outcomeSignature));
+  checks.push({
+    id: "entry",
+    label: "Outcome signed by the run's key",
+    status: entryOk ? "pass" : !digestOk && doc.outcomeSignature ? "not-applicable" : "fail",
+    detail: entryOk
+      ? "The run's key signed this receipt's outcome and approval when it logged them."
+      : !digestOk && doc.outcomeSignature
+        ? "Not checked: the receipt's contents were changed, so a signature over its digest does not cover them."
+        : !doc.outcomeSignature
+        ? "This entry's outcome and approval are not signed (it was logged before entries were signed, or by someone else), so they cannot be trusted."
+        : !run
+          ? "The run this entry names is not in the audit log, so there is no key to check it against."
+          : "The outcome or approval does not match what the run's key signed: this entry was written or changed by someone else.",
+  });
+
+  if (rivalRuns.length > 0) {
+    checks.push({
+      id: "unique",
+      label: "Only one run claims this receipt",
+      status: "fail",
+      detail:
+        `Another run (${rivalRuns.join(", ")}) also logged a validly signed entry for this receipt ID. ` +
+        "Receipt IDs are random, so one of them is a copy made with someone else's key; the log cannot say which is genuine.",
+    });
+  }
+
   return checks;
+}
+
+/** One of possibly several log entries for a receipt ID, with what is needed to check it. */
+export interface ResolvedEntry {
+  doc: ReceiptDoc;
+  run?: RunDoc;
+  approver?: ApproverDoc;
+  /** Other runs with an authentic entry for the same receipt ID. */
+  rivalRuns: string[];
+  /** Entries for this ID that failed verification and were set aside. */
+  ignored: number;
+}
+
+/**
+ * Anyone can append to the log, so a receipt ID may have several entries. Picks the one
+ * that fully verifies against its own run's key. An entry that does not verify is set
+ * aside and cannot hide one that does. When none verifies, the earliest is returned so
+ * its failing checks can be shown.
+ */
+export async function resolveLogEntry(
+  entries: ReceiptDoc[],
+  lookup: Pick<AuditLookup, "run" | "approver">,
+): Promise<ResolvedEntry | undefined> {
+  if (entries.length === 0) return undefined;
+  const runs = new Map<string, Promise<RunDoc | undefined>>();
+  const runOf = (id: string) => {
+    if (!runs.has(id)) runs.set(id, lookup.run(id).catch(() => undefined));
+    return runs.get(id)!;
+  };
+  const checked = await Promise.all(
+    entries.map(async (doc) => {
+      const run = await runOf(doc.runId);
+      const keyId = doc.approval?.keyId;
+      const approver = keyId && lookup.approver ? await lookup.approver(keyId).catch(() => undefined) : undefined;
+      return { doc, run, approver, ok: allPassed(await checkLoggedReceipt(doc, run, approver)) };
+    }),
+  );
+  const authentic = checked.filter((c) => c.ok);
+  const chosen = authentic[0] ?? checked[0];
+  const rivalRuns = [...new Set(authentic.map((c) => c.doc.runId))].filter((id) => id !== chosen.doc.runId);
+  return {
+    doc: chosen.doc,
+    run: chosen.run,
+    approver: chosen.approver,
+    rivalRuns,
+    ignored: checked.length - authentic.length - (chosen.ok ? 0 : 1),
+  };
 }
 
 export const allPassed = (checks: Check[]) => checks.every((c) => c.status !== "fail");
@@ -138,7 +224,8 @@ export interface AuditLookup {
   run(runId: string): Promise<RunDoc | undefined>;
   /** A phone's registered key, for approvals signed on a phone. Optional. */
   approver?(keyId: string): Promise<ApproverDoc | undefined>;
-  receipt(id: string): Promise<ReceiptDoc | undefined>;
+  /** Every log entry for this receipt ID; the authentic one is picked with resolveLogEntry. */
+  receipt(id: string): Promise<ReceiptDoc[]>;
 }
 
 const sameKey = (a: JsonWebKey, b: JsonWebKey) => a.kty === b.kty && a.crv === b.crv && a.x === b.x && a.y === b.y;
@@ -195,7 +282,9 @@ export async function checkPastedReceipt(text: string, lookup: AuditLookup): Pro
   let loggedCopy: ReceiptDoc | undefined;
   let lookupError = "";
   try {
-    [loggedRun, loggedCopy] = await Promise.all([lookup.run(doc.runId), lookup.receipt(doc.receipt.id)]);
+    const [run, entries] = await Promise.all([lookup.run(doc.runId), lookup.receipt(doc.receipt.id)]);
+    loggedRun = run;
+    loggedCopy = (await resolveLogEntry(entries, lookup))?.doc;
   } catch (caught) {
     lookupError = caught instanceof Error ? caught.message : "The audit log could not be read.";
   }
@@ -216,8 +305,11 @@ export async function checkPastedReceipt(text: string, lookup: AuditLookup): Pro
       };
 
   const logCopy: Check = loggedCopy
-    ? loggedCopy.receipt.digest === doc.receipt.digest && loggedCopy.signature === doc.signature
-      ? { id: "log-copy", label: "Matches the audit log copy", status: "pass", detail: "The audit log holds the same receipt and signature." }
+    ? loggedCopy.receipt.digest === doc.receipt.digest &&
+      loggedCopy.signature === doc.signature &&
+      loggedCopy.runId === doc.runId &&
+      loggedCopy.outcome === doc.outcome
+      ? { id: "log-copy", label: "Matches the audit log copy", status: "pass", detail: "The audit log holds the same receipt, signature and outcome." }
       : { id: "log-copy", label: "Matches the audit log copy", status: "fail", detail: "The audit log holds a different version of this receipt." }
     : { id: "log-copy", label: "Matches the audit log copy", status: lookupError ? "not-applicable" : "fail", detail: lookupError ? "The audit log could not be read." : "No receipt with this ID is in the audit log." };
 

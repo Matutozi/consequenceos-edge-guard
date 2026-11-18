@@ -92,6 +92,13 @@ export const defaultRegistry: ToolRegistry = {
     readOnly: false,
     lowImpact: true,
   },
+  resolve_ticket: {
+    system: "Northwind helpdesk",
+    description: "Mark a ticket as resolved, which takes it out of the open queue. It can be reopened.",
+    sensitivity: "internal",
+    reversible: true,
+    readOnly: false,
+  },
   email_user: {
     system: "Northwind outbox",
     description: "Send an email. A sent email cannot be recalled.",

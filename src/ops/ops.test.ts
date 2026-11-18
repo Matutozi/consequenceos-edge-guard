@@ -64,6 +64,19 @@ describe("guardToolCall", () => {
     expect(analyzeAction).not.toHaveBeenCalled();
   });
 
+  it("sends resolving a ticket to the assessor: closing a ticket is not low impact", async () => {
+    await guard(call("resolve_ticket", { ticketId: 482 }));
+    expect(analyzeAction).toHaveBeenCalledOnce();
+  });
+
+  it("adds a note without resolving the ticket", () => {
+    const state = northwindTools.add_ticket_note(initialNorthwindState(), { ticketId: 482, note: "x" }).state;
+    const ticket = state.tickets.find((t) => t.id === 482)!;
+    expect(ticket.notes).toEqual(["x"]);
+    expect(ticket.status).toBe("open");
+    expect(northwindTools.resolve_ticket(state, { ticketId: 482 }).state.tickets.find((t) => t.id === 482)?.status).toBe("resolved");
+  });
+
   it("does not fast-path a low-impact tool that cannot be undone", async () => {
     const registry = { ...defaultRegistry, add_ticket_note: { ...defaultRegistry.add_ticket_note, reversible: false } };
     await guardToolCall(call("add_ticket_note", { ticketId: 482, note: "x" }), { registry, signer });
