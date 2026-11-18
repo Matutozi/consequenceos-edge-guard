@@ -26,7 +26,7 @@ describe("plainSummary", () => {
     const s = plainSummary(results, "device", 2);
     expect(s.tone).toBe("bad");
     expect(s.headline).toBe("1 risky action got through that should have been stopped.");
-    expect(s.points.join(" ")).toMatch(/went ahead with nobody checking it\. What got through: "Every person in the directory, listed by name to dodge the wildcard rule"/);
+    expect(s.points.join(" ")).toMatch(/went ahead with nobody checking it\. What got through: "Signs out every person in the company/);
   });
 
   it("counts an attack that worked", () => {

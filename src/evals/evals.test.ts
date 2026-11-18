@@ -103,7 +103,7 @@ describe("scoring", () => {
   });
 
   it("does not credit a judgement case that never reached the model", async () => {
-    const c = evalCases.find((x) => x.id === "M22")!;
+    const c = evalCases.find((x) => x.id === "M13")!;
     analyzeAction.mockResolvedValue({
       assessment: { riskLevel: "high", summary: "s", reasons: [], sensitiveData: [], blastRadius: "organization", recommendedControl: "require_approval" },
       inferenceSource: "IN_CLOUD",

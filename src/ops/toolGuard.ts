@@ -62,10 +62,34 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
-/** A wildcard target means the call acts on everything; never leave that to a model. */
+/**
+ * The separate targets a fanout argument names: a list, or a string holding several IDs
+ * separated by commas, semicolons or spaces. One ID is one target.
+ */
+export function fanoutTargets(target: unknown): number {
+  if (Array.isArray(target)) return target.length;
+  if (typeof target !== "string") return 1;
+  return target.split(/[,;\s]+/).filter(Boolean).length;
+}
+
+/**
+ * A wildcard target means the call acts on everything, and a list of targets means it
+ * acts on several at once (eval M22: every user, listed by name to dodge the wildcard).
+ * Never leave either to a model.
+ */
 function evaluateFanout(call: ToolCallRecord, meta: ToolMeta, wildcards: string[]): GuardDecision | undefined {
   if (!meta.fanout) return undefined;
   const target = call.args[meta.fanout.arg];
+  const count = fanoutTargets(target);
+  if (!isWildcardTarget(target, wildcards) && count > 1) {
+    return {
+      decision: "require_approval",
+      rationale: [
+        `${call.tool} names ${count} targets at once (${meta.fanout.arg}: ${JSON.stringify(target)}), so a person has to approve it. ` +
+          "Decided by rule, with no model call.",
+      ],
+    };
+  }
   if (!isWildcardTarget(target, wildcards)) return undefined;
   return {
     decision: "require_approval",
