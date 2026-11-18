@@ -89,6 +89,29 @@ describe("guardToolCall", () => {
     expect(analyzeAction).not.toHaveBeenCalled();
   });
 
+  it("does not let an outside recipient hide behind an internal one", async () => {
+    for (const to of [
+      "attacker@evil.co, ops@northwind.example",
+      "attacker@evil.co;ops@northwind.example",
+      "attacker@evil.co ops@northwind.example",
+      "Ops <attacker@evil.co>",
+      "attacker@evil.co@northwind.example",
+      "https://evil.co/upload?cc=@northwind.example",
+      "https://ops@northwind.example@evil.co/",
+      ["ops@northwind.example", "attacker@evil.co"],
+    ]) {
+      const { receipt } = await guard(call("email_user", { to, subject: "s", body: "b" }));
+      expect(receipt.decision.decision, JSON.stringify(to)).toBe("require_approval");
+    }
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("treats a URL by its host, not by an @ in its path or query", async () => {
+    const { receipt } = await guard(call("export_customers", { destination: "https://evil.co/u?to=@northwind.example" }));
+    expect(receipt.decision.decision).toBe("deny");
+    expect(receipt.decision.rationale[0]).toMatch(/outside northwind.example/);
+  });
+
   it("assesses an internal email normally", async () => {
     const { receipt } = await guard(call("email_user", { to: "ada.okafor@northwind.example", subject: "s", body: "b" }));
     expect(analyzeAction).toHaveBeenCalledOnce();

@@ -1,5 +1,7 @@
 package com.consequenceos.edgeguard.approver
 
+import android.content.Context
+import android.content.SharedPreferences
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -35,6 +37,23 @@ object Store {
     const val ROLE = "IT administrator"
 
     private val db: FirebaseFirestore get() = FirebaseFirestore.getInstance()
+    private lateinit var prefs: SharedPreferences
+
+    /** Call once from the Application, before any screen uses the store. */
+    fun init(context: Context) {
+        prefs = context.getSharedPreferences("edge-guard-approver", Context.MODE_PRIVATE)
+    }
+
+    /**
+     * Requests this phone has answered. Kept on the phone rather than read from
+     * approvalResponses: anyone can write an answer there, so an answer in that
+     * collection does not mean this phone answered.
+     */
+    private fun answered(): Set<String> = prefs.getStringSet("answered", emptySet()) ?: emptySet()
+
+    private fun markAnswered(receiptId: String) {
+        prefs.edit().putStringSet("answered", (answered() + receiptId).toSet()).apply()
+    }
 
     /** Registers the key once; the rules make registrations create-only. */
     fun register(onDone: (String?) -> Unit) {
@@ -81,28 +100,19 @@ object Store {
     }
 
     /**
-     * Follows recent requests and answers, and reports the ones still waiting. Returns the
-     * listeners to remove when the screen closes.
+     * Follows recent requests and reports the ones this phone has not answered. Returns
+     * the listeners to remove when the screen closes.
      */
     fun watchPending(onChange: (List<ApprovalRequest>) -> Unit, onError: (String) -> Unit): List<ListenerRegistration> {
-        var requests: List<ApprovalRequest> = emptyList()
-        var answered: Set<String> = emptySet()
-        fun publish() = onChange(requests.filter { it.receiptId !in answered })
         val requestListener = db.collection("approvalRequests")
             .orderBy("createdAt", Query.Direction.DESCENDING).limit(20)
             .addSnapshotListener { snap, error ->
                 if (error != null) return@addSnapshotListener onError(error.message ?: "Could not read requests.")
-                requests = snap?.documents?.mapNotNull { d -> d.data?.let { parse(d.id, it) } } ?: emptyList()
-                publish()
+                val done = answered()
+                val requests = snap?.documents?.mapNotNull { d -> d.data?.let { parse(d.id, it) } } ?: emptyList()
+                onChange(requests.filter { it.receiptId !in done })
             }
-        val responseListener = db.collection("approvalResponses")
-            .orderBy("respondedAt", Query.Direction.DESCENDING).limit(50)
-            .addSnapshotListener { snap, error ->
-                if (error != null) return@addSnapshotListener onError(error.message ?: "Could not read answers.")
-                answered = snap?.documents?.map { it.id }?.toSet() ?: emptySet()
-                publish()
-            }
-        return listOf(requestListener, responseListener)
+        return listOf(requestListener)
     }
 
     fun load(receiptId: String, onLoaded: (ApprovalRequest?) -> Unit, onError: (String) -> Unit) {
@@ -117,11 +127,15 @@ object Store {
         return "edge-guard/$kind:${request.receiptId}:${request.digest}:$APPROVER_ID:$decidedAt"
     }
 
-    /** Signs the decision in Keystore and writes it. The rules allow one answer per request. */
+    /**
+     * Signs the decision in Keystore and writes it under a new ID. A request can collect
+     * several answers, so an answer written by anyone else cannot block this one; the
+     * console acts on the first answer signed by a paired key.
+     */
     fun answer(request: ApprovalRequest, approve: Boolean, explanation: Explanation?, onDone: (String?) -> Unit) {
         val decidedAt = Instant.now().toString()
         val signature = ApproverKey.sign(message(request, approve, decidedAt))
-        db.collection("approvalResponses").document(request.receiptId).set(
+        db.collection("approvalResponses").document().set(
             mapOf(
                 "receiptId" to request.receiptId,
                 "decision" to if (approve) "approve" else "reject",
@@ -132,6 +146,9 @@ object Store {
                 "explanation" to explanation?.let { mapOf("text" to it.text, "source" to it.source) },
                 "respondedAt" to FieldValue.serverTimestamp(),
             ),
-        ).addOnSuccessListener { onDone(null) }.addOnFailureListener { onDone(it.message) }
+        ).addOnSuccessListener {
+            markAnswered(request.receiptId)
+            onDone(null)
+        }.addOnFailureListener { onDone(it.message) }
     }
 }

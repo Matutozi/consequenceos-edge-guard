@@ -4,7 +4,7 @@ import type { BlastRadius, DataSensitivity, RiskLevel } from "./types";
  * The adjustable part of Edge Guard's policy. Published in Remote Config as
  * `guard_policy`. The floor is not here and cannot be configured: restricted data
  * that cannot be undone is blocked, unknown tools are the worst case, the egress
- * rule applies, sensitive data never goes to the cloud from the console, and a call
+ * rule applies, no cloud model sees a call on sensitive data, and a call
  * that cannot be assessed goes to a person.
  */
 export interface PolicyConfig {

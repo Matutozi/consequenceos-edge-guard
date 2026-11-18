@@ -101,8 +101,9 @@ Edge Guard checks each call in this order and stops at the first step that decid
    - Public and internal data: `InferenceMode.PREFER_ON_DEVICE`. Gemini Nano if it is
      ready, otherwise Gemini in the cloud through Firebase AI Logic.
    - Confidential and restricted data: `InferenceMode.ONLY_ON_DEVICE`. If Gemini Nano
-     is not ready, nothing is sent anywhere and the call goes to a person. The console
-     never sends sensitive data to the cloud.
+     is not ready, no model is asked and the call goes to a person. No cloud model ever
+     sees a call on sensitive data. (The receipt is still written to the audit log; see
+     Audit log and verification.)
    - **Gemini Nano can say no on its own; saying yes needs a second opinion.** When
      Nano would allow a call on public or internal data, Gemini in the cloud assesses
      it too, and the stricter answer decides. If the cloud does not answer, or the data
@@ -281,6 +282,13 @@ Every receipt, its approval and its outcome are appended to Cloud Firestore.
 each document's shape. App Check is enforced for Firestore and Firebase AI Logic.
 Each run stores its public key, so a receipt can be verified from the log alone.
 
+**The audit log is public.** Anyone can read it, so anyone can verify a receipt
+without an account. That includes each call's arguments, also on confidential and
+restricted data, and approval requests for the phone. Northwind's data is fictional,
+so this is acceptable for the demo. It would not be for real data: the privacy
+guarantee covers the models, not the log. A real deployment would restrict reads to
+signed-in auditors, or log a hash of the arguments for sensitive calls.
+
 The Verify page checks a receipt's digest, its signature against the run's public
 key, the call it is bound to, any approval, and whether the outcome matches the
 decision. For a pasted or uploaded file, the key always comes from the audit log: a
@@ -344,8 +352,8 @@ What the runs showed:
   on-device run's actual decisions, the cloud would have overruled all three false
   allows.
 - **Hybrid sent 1 of 20 judgement calls to the cloud, against 20 of 20 for cloud alone,
-  with no false allows.** Escalations never leave the device; only what Nano wants to
-  allow is checked in the cloud, and sensitive data is never sent.
+  with no false allows.** Escalations are never sent to a cloud model; only what Nano
+  wants to allow is checked in the cloud, and never a call on sensitive data.
 - **Speed comes from the rules, not the on-device model.** On this laptop Gemini Nano
   took about 9 seconds per assessment, no faster than the cloud. The rules decide 22 of
   42 cases in milliseconds with no model at all. Nano's advantages here are privacy and
@@ -364,8 +372,8 @@ an action that cannot be undone may go without approval, which data classes and 
 always need a person, the fast paths, the wildcard targets, the assessor timeout, and
 whether Gemini Nano needs a cloud second opinion to allow).
 The floor is shown but cannot be edited: restricted data that cannot be undone is
-blocked, unknown tools are the worst case, the egress rule applies, the console never
-sends sensitive data to the cloud, and a call that cannot be assessed goes to a person.
+blocked, unknown tools are the worst case, the egress rule applies, no cloud model sees
+a call on sensitive data, and a call that cannot be assessed goes to a person.
 
 Every edit is re-scored against the evals at once, without calling a model. Rules run
 exactly as they would live (`decideByRules` in `src/ops/toolGuard.ts`). Judgement cases
@@ -402,8 +410,9 @@ request appears on the phone. Whichever answers first, the phone or the console,
   phone approvals against that key.
 - **Pairing.** The phone registers its public key under its fingerprint. In the console,
   **Pair a phone** lists registered phones; trust only the one whose fingerprint matches
-  the phone's screen. An answer signed by any other key is ignored, and a test proves an
-  impostor phone claiming to be Mei Lin is refused.
+  the phone's screen. An answer signed by any other key is ignored, and it cannot block
+  the real one, since a request can collect several answers. A test proves an impostor
+  phone claiming to be Mei Lin is refused.
 - **No billing.** Requests reach the phone through a Firestore listener while the app is
   open; there is no push service.
 
@@ -545,9 +554,10 @@ that period:
   the same page, so the receipt signature proves the executor checks Edge Guard's
   receipts, not that the signer is isolated from the agent. Approvals made on a paired
   phone are the exception: they are signed in Android Keystore, outside the page.
-- **No sign-in.** Mei Lin is simulated. Anyone with a valid App Check token can read the
-  audit log, append a run signed with their own key, or register a phone; a phone counts
-  only after it is paired in the console, and pairing is kept per browser.
+- **No sign-in.** Mei Lin is simulated. The audit log is readable by anyone, arguments
+  included (see Audit log and verification). Anyone with a valid App Check token can
+  append a run signed with their own key, or register a phone; a phone counts only
+  after it is paired in the console, and pairing is kept per browser.
 - **The approver app only sees requests while it is open.** Notifications would need
   Cloud Messaging and a server to send them.
 - **The live planner usually ignores the hidden instruction.** That is good behaviour

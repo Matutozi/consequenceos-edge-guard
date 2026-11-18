@@ -76,13 +76,17 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // One signed answer per request, from a registered phone.
-    match /approvalResponses/{receiptId} {
+    // Signed answers to a request, from a registered phone. Rules cannot check a
+    // signature, so a request may collect several answers under new IDs: an answer
+    // written by anyone else cannot take the real phone's place. The console acts on
+    // the first answer that verifies against a key it has paired.
+    match /approvalResponses/{responseId} {
       allow read: if true;
-      allow create: if exists(/databases/$(database)/documents/approvalRequests/$(receiptId))
+      allow create: if responseId.matches('^[A-Za-z0-9]{20}$')
+        && request.resource.data.receiptId is string
+        && exists(/databases/$(database)/documents/approvalRequests/$(request.resource.data.receiptId))
         && request.resource.data.keys().hasOnly(
             ['receiptId', 'decision', 'approverId', 'keyId', 'decidedAt', 'signature', 'explanation', 'respondedAt'])
-        && request.resource.data.receiptId == receiptId
         && request.resource.data.decision in ['approve', 'reject']
         && request.resource.data.keyId is string
         && exists(/databases/$(database)/documents/approvers/$(request.resource.data.keyId))

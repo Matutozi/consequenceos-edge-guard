@@ -15,6 +15,7 @@ import com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory
 class ApproverApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        Store.init(this)
         val app = FirebaseApp.initializeApp(
             this,
             FirebaseOptions.Builder()

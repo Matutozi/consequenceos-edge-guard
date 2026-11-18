@@ -176,13 +176,19 @@ export const approvalStore = {
     }
   },
 
-  /** Calls back once with the phone's answer. Returns a function that stops listening. */
+  /**
+   * Calls back with each answer to this request as it arrives. Anyone can write an
+   * answer, so the caller must verify each one; an unverified answer never blocks a
+   * later, valid one. Returns a function that stops listening.
+   */
   async onResponse(receiptId: string, callback: (response: ApprovalResponseDoc) => void): Promise<() => void> {
     const { db, fs } = await firestore();
     return fs.onSnapshot(
-      fs.doc(db, RESPONSES, receiptId),
+      fs.query(fs.collection(db, RESPONSES), fs.where("receiptId", "==", receiptId)),
       (snap) => {
-        if (snap.exists()) callback(snap.data() as ApprovalResponseDoc);
+        for (const change of snap.docChanges()) {
+          if (change.type === "added") callback(change.doc.data() as ApprovalResponseDoc);
+        }
       },
       () => {
         // A listener error leaves approval on this screen, which still works.

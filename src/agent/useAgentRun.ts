@@ -247,8 +247,13 @@ export function useAgentRun(): AgentRun {
           updateStep(index, { phase: "awaiting" });
           type Answer = { approved: boolean; response?: ApprovalResponseDoc };
           let stopListening: (() => void) | undefined;
+          // Set once a decision is made, so a late, unverified answer changes nothing.
+          let settled = false;
           const answer = await new Promise<Answer>((resolve) => {
-            approvalResolver.current = (approved) => resolve({ approved });
+            approvalResolver.current = (approved) => {
+              settled = true;
+              resolve({ approved });
+            };
             if (trusted.length === 0) return;
             // Also ask Mei Lin's phone; whichever answers first decides.
             updateStep(index, { phone: { status: "sending" } });
@@ -258,7 +263,10 @@ export function useAgentRun(): AgentRun {
                 if (live()) updateStep(index, { phone: { status: "sent" } });
                 return approvalStore.onResponse(signed.receipt.id, (response) => {
                   void trustedApprover(response.keyId).then(async (approver) => {
-                    if (approver && (await verifyResponse(signed.receipt, response, approver))) {
+                    const valid = !!approver && (await verifyResponse(signed.receipt, response, approver));
+                    if (settled) return;
+                    if (valid) {
+                      settled = true;
                       resolve({ approved: response.decision === "approve", response });
                     } else if (live()) {
                       updateStep(index, {

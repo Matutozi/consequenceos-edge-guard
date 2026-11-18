@@ -122,17 +122,26 @@ export function lookupTool(registry: ToolRegistry, tool: string): ToolMeta & { r
   return meta ? { ...meta, registered: true } : { ...UNKNOWN_TOOL, registered: false };
 }
 
-/** The destination's domain, or undefined when it cannot be determined. */
+/**
+ * The destination's domain, or undefined when it cannot be determined. Only a single
+ * plain address or a single URL has one: a list of recipients, a display name, or a
+ * second "@" (as in "a@evil.co, b@northwind.example") is undetermined, so it counts as outside.
+ */
 export function destinationDomain(destination: unknown): string | undefined {
   if (typeof destination !== "string") return undefined;
   const value = destination.trim().toLowerCase();
-  const at = value.lastIndexOf("@");
-  if (at >= 0) return value.slice(at + 1) || undefined;
-  try {
-    return new URL(value).hostname || undefined;
-  } catch {
-    return undefined;
+  if (!value || /[\s,;<>"'()\\]/.test(value)) return undefined;
+  if (value.includes("://")) {
+    try {
+      const url = new URL(value);
+      return url.username || url.password ? undefined : url.hostname || undefined;
+    } catch {
+      return undefined;
+    }
   }
+  const parts = value.split("@");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) return undefined;
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(parts[1]) ? parts[1] : undefined;
 }
 
 /** An unparseable destination counts as outside: the rule fails closed. */

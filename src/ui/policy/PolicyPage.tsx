@@ -22,7 +22,7 @@ const FLOOR = [
   "Restricted data that cannot be undone is blocked.",
   "A tool that is not in the registry is treated as restricted and irreversible, so it is blocked.",
   "Each tool's egress setting applies to destinations outside the internal domains.",
-  "The console never sends confidential or restricted data to the cloud.",
+  "No cloud model sees a call on confidential or restricted data.",
   "If the assessor can't run or doesn't answer in time, a person decides.",
 ];
 

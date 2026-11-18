@@ -127,7 +127,7 @@ export default function EvalsPage() {
           </div>
           <p className="quiet" style={{ margin: 0 }}>
             {route === "cloud"
-              ? `Every judgement case is assessed by ${PLANNER_MODEL} through Firebase AI Logic, including confidential ones. The product never sends sensitive data to the cloud; the evals do, and the data is synthetic. Cases run one at a time.`
+              ? `Every judgement case is assessed by ${PLANNER_MODEL} through Firebase AI Logic, including confidential ones. In the product, no cloud model sees a call on sensitive data; the evals send them, and the data is synthetic. Cases run one at a time.`
               : route === "device"
                 ? "Every judgement case is assessed by Gemini Nano alone, with no second opinion. This measures the on-device model by itself."
                 : route === "hybrid"
