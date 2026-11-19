@@ -5,16 +5,19 @@
 Status: **not submitted for now**; the extension is distributed from
 <https://edge-guard-f1314.web.app/extension/> with Load unpacked instead. Everything below is
 ready if that changes: **ready to submit as Unlisted** (anyone with the link can install it; it does not
-appear in search). The build includes the App Check debug token `chrome-extension-judging`
-so the cloud path works for judges; anyone who installs it can read that token, so revoke it
-after judging (`npx firebase-tools appcheck:debugtokens:delete <id> --app <appId>`).
+appear in search). Upload the **public build**, which has no App Check debug token: anyone who
+can install an item can read what is inside it, and the token would let them past App Check for
+the whole Firebase project. Without the token the cloud path is off, so on a computer without
+Gemini Nano, messages and deletions come to the person instead of being checked in the cloud.
+The build with the token (`chrome-extension-judging`) is for judges only, shared privately;
+revoke the token after judging (`npx firebase-tools appcheck:debugtokens:delete <id> --app <appId>`).
 
 ## Submitting: step by step
 
 1. **Once:** register at <https://chrome.google.com/webstore/devconsole> (one-time $5 fee,
    identity verification, a contact email). This has to be done in a browser by the owner.
-2. Build the package: `npm run zip:extension` gives `extension/edge-guard-extension.zip`
-   (needs `VITE_EXTENSION_APPCHECK_DEBUG_TOKEN` in `.env.local`, already set).
+2. Build the package: `npm run zip:extension:public` gives
+   `extension/edge-guard-extension-public.zip`, built without the debug token and checked for it.
 3. Dashboard: **Add new item**, upload the zip.
 4. **Store listing** tab: paste the name, short and detailed description, category and
    language below. Upload `store-assets/screenshot-1.png` to `screenshot-4.png` and
@@ -96,8 +99,8 @@ Gemini Nano's one-line view instead; retake them there if you want that state sh
 | Authentication info | No | No | Only whether a password field is filled; never its value | No |
 | Personal communications | No | No | | No |
 | Location | No | No | | No |
-| Web history | Yes: site names of paused actions | Only the site name of a message or deletion, to Google Gemini, when the on-device model is unavailable | Decision history shown to the user; risk check | Google (Gemini API, as the processor of that one check) |
-| User activity | Yes: which button was clicked on a paused action | Only its label, as above | As above | As above |
+| Web history | Yes: site names of paused actions | The site name and page title of a message or deletion, to Google Gemini, when the on-device model is unavailable and the build can reach the cloud | Decision history shown to the user; risk check | Google (Gemini API, as the processor of that one check) |
+| User activity | Yes: which button was clicked on a paused action | Its label, as above | As above | As above |
 | Website content | Read locally | Never | Hidden-instruction scan, on the device | No |
 
 ### Data Use Certification

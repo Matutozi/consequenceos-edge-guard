@@ -98,8 +98,9 @@ Edge Guard checks each call in this order and stops at the first step that decid
    parsed counts as outside.
 2. **Hard rules, no model.** Restricted data that cannot be undone is blocked. A tool
    that is not in the registry is treated as restricted and irreversible, so it is
-   blocked too. A call whose target is a wildcard ("all", "*", "everyone"), or a list of
-   several targets, goes to a person, whatever a model would say.
+   blocked too. A call whose target is a wildcard ("all", "*", "everyone"), a list of
+   several targets, or no target at all goes to a person, whatever a model would say. The
+   shape does not matter: `["all"]` is a wildcard and `["a,b"]` is two targets.
 3. **Fast path, no model.** Reads, and changes the registry marks as low impact, are
    allowed by rule when they can be undone and touch only public or internal data.
    **Then, text addressed to the assessor, no model.** A call that would reach the
@@ -193,7 +194,7 @@ threshold and its default).
 | `readOnly` | Reads state without changing it. Eligible for the fast path |
 | `lowImpact` | Optional. Changes state so little that a model adds nothing. Eligible for the fast path |
 | `egress` | Optional. `arg` names the destination argument; `outside` is `deny` or `escalate` |
-| `fanout` | Optional. `arg` names the target argument; a wildcard or a list of several targets there sends the call to a person |
+| `fanout` | Optional. `arg` names the target argument; a wildcard, several targets, or none there sends the call to a person, whatever the argument's shape |
 
 Each entry is validated. A malformed entry is dropped, which makes that tool
 unregistered and therefore blocked, so a bad config can only make Edge Guard

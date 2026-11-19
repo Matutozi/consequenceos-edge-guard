@@ -42,12 +42,20 @@ rules first, then the assessor through Firebase AI Logic, then the same determin
 **Download page:** <https://edge-guard-f1314.web.app/extension/> has the download and four
 illustrated steps written for non-technical people. It is not in the Chrome Web Store, and
 Chrome only installs from the store with one click, so it uses Developer mode's
-**Load unpacked**. The page is kept out of search engines, because the download carries the
-App Check debug token for the judging period.
+**Load unpacked**. The page is kept out of search engines.
+
+**The public download has no App Check debug token.** Anyone who downloads a build can read
+what is inside it, and the token would let them past App Check for the whole Firebase project
+(Gemini calls on its quota, writes to the audit log). Without it the cloud path is off: checks
+run on Gemini Nano, and on a computer without Nano, messages and deletions come to the person
+like payments and sharing do. To show judges the cloud second opinion, give them the build with
+the token (`npm run zip:extension`) privately, for example in Devpost's testing instructions.
 
 To publish a new version: `npm run release:extension`, then
-`npx firebase-tools deploy --only hosting`. The zip is copied next to the page at build time
-and is never committed.
+`npx firebase-tools deploy --only hosting`. It builds the extension without the token, checks
+the build, the page folder and the hosting folder for it (`scripts/check-no-secrets.ts`, which
+also looks inside zips), and stops if it finds it. Hosting's predeploy runs the same check, so a
+build with the token cannot be deployed by accident. The zip is never committed.
 
 **The short version:**
 
@@ -64,7 +72,8 @@ and is never committed.
 ```bash
 npm install
 npm run build:extension   # into extension/dist
-npm run zip:extension     # extension/edge-guard-extension.zip
+npm run zip:extension          # extension/edge-guard-extension.zip, with the token: judges only
+npm run zip:extension:public   # extension/edge-guard-extension-public.zip, without it
 ```
 
 It reads the same `.env.local` as the web app. reCAPTCHA cannot run inside an extension, so
@@ -73,9 +82,9 @@ the cloud path uses an **App Check debug token**, which the hackathon accepts:
 1. Firebase console, **App Check > Apps**, the web app, **Manage debug tokens**, **Add debug token**.
 2. Put it in `.env.local` as `VITE_EXTENSION_APPCHECK_DEBUG_TOKEN=...` and rebuild.
 
-The token is inside the built extension, and anyone with the build can read it. Share builds
-only with judges, never commit `extension/dist` or the zip (both are ignored), and revoke the
-token when judging ends. Without a token everything still works on the device; anything only
+The token is inside the built extension, and anyone with the build can read it. Share that
+build only with judges, never publish it (the public download is built without it), never
+commit `extension/dist` or the zips (all are ignored), and revoke the token when judging ends. Without a token everything still works on the device; anything only
 the cloud could have checked comes to the person instead.
 
 ## Tests

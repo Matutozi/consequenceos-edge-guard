@@ -1,5 +1,5 @@
 import { el, LANGUAGE_OPTIONS, promptApi, when } from "./dom";
-import { ENABLED_KEY, HISTORY_KEY, scanKey, type HistoryItem, type ScanReport, type ToContent } from "./messages";
+import { CLOUD_SEES, ENABLED_KEY, hasCloudToken, HISTORY_KEY, scanKey, type HistoryItem, type ScanReport, type ToContent } from "./messages";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -23,7 +23,9 @@ async function renderAi(): Promise<void> {
       el("p", { text: "This browser has no on-device AI." }),
       el("p", {
         className: "muted",
-        text: "Edge Guard still pauses risky actions. Messages and deletions are checked in the cloud (only the button label and the site are sent); payments and sharing come straight to you.",
+        text: hasCloudToken()
+          ? `Edge Guard still pauses risky actions. Messages and deletions are checked in the cloud (only ${CLOUD_SEES} are sent); payments and sharing come straight to you.`
+          : "Edge Guard still pauses risky actions. Without on-device AI, messages and deletions come to you to decide, like payments and sharing. Nothing is sent to the cloud.",
       }),
     );
     return;

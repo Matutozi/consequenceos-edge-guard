@@ -8,7 +8,7 @@ vi.mock("../../src/ai/analyzeAction", async (importOriginal) => ({
 
 const { guardPageAction, toProposal } = await import("./guard");
 const { classifyAction } = await import("./classify");
-import type { PageAction } from "./messages";
+import { CLOUD_SEES, type PageAction } from "./messages";
 
 function action(label: string, extra: Partial<Parameters<typeof classifyAction>[0]> = {}, title = "Checkout"): PageAction {
   const c = classifyAction({ label, pageHost: "travel.example", ...extra })!;
@@ -80,5 +80,40 @@ describe("guardPageAction", () => {
     const proposal = toProposal(action("Pay $1,240"));
     expect(proposal.action).toBe('Click "Pay $1,240" on travel.example: a payment of $1,240.');
     expect(Object.keys(proposal).sort()).toEqual(["action", "actor", "context", "dataSensitivity", "reversible", "target"]);
+  });
+});
+
+describe("what people are told the cloud sees", () => {
+  // Found in the audit: the extension said the cloud "saw only the button label and the site",
+  // but the proposal also carries the page title. Every page field that reaches the proposal
+  // is listed here, typed against PageAction, so a new page field fails the typecheck until
+  // the disclosure names it.
+  const disclosed: Record<"label" | keyof PageAction["page"], { marker: string; named: RegExp }> = {
+    label: { marker: "Send LABEL-MARK", named: /button's label/ },
+    host: { marker: "host-mark.example", named: /the site/ },
+    title: { marker: "TITLE-MARK", named: /the page title/ },
+  };
+
+  it("names every page field the proposal carries", () => {
+    const sent = JSON.stringify(
+      toProposal({ ...action("Send"), label: disclosed.label.marker, page: { host: disclosed.host.marker, title: disclosed.title.marker } }),
+    );
+    for (const { marker, named } of Object.values(disclosed)) {
+      expect(sent).toContain(marker);
+      expect(CLOUD_SEES).toMatch(named);
+    }
+  });
+
+  it("says what the cloud saw when the cloud decided", async () => {
+    analyzeAction.mockResolvedValue(rated("low", "IN_CLOUD"));
+    const result = await guardPageAction(action("Send"));
+    expect(result.decidedBy).toBe(`Gemini in the cloud, which saw only ${CLOUD_SEES}`);
+    expect(result.decidedBy).toMatch(/page title/);
+  });
+
+  it("says what the cloud saw when it double-checked Gemini Nano", async () => {
+    analyzeAction.mockResolvedValueOnce(rated("low")).mockResolvedValueOnce(rated("low", "IN_CLOUD"));
+    const result = await guardPageAction(action("Send"));
+    expect(result.decidedBy).toMatch(new RegExp(`double-checked by Gemini in the cloud \\(which saw only ${CLOUD_SEES}\\)`));
   });
 });

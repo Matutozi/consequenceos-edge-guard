@@ -1,6 +1,7 @@
 {
   "hosting": {
     "public": "dist",
+    "predeploy": ["npx vite-node scripts/check-no-secrets.ts dist"],
     "ignore": [
       "firebase.json",
       "**/.*",

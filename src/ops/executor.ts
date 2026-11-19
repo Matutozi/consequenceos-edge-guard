@@ -17,6 +17,8 @@ export type ToolImpl<S> = (state: S, args: Record<string, unknown>) => { state: 
  */
 export class Executor<S> {
   private readonly usedReceipts = new Set<string>();
+  /** Receipts a call is being authorized with right now. */
+  private readonly inFlight = new Set<string>();
 
   /**
    * @param verifySignature checks Edge Guard's signature on receipts.
@@ -78,9 +80,22 @@ export class Executor<S> {
     signed?: SignedReceipt,
     approval?: Approval,
   ): Promise<{ state: S; output: string }> {
-    await this.authorize(call, signed, approval);
-    // Single use: consumed before running, so a failing tool cannot be retried on the same receipt.
-    this.usedReceipts.add(signed!.receipt.id);
+    // Claimed before the first await. authorize() awaits signature and approval checks, so
+    // without this, concurrent calls with one receipt could all pass its "already used"
+    // check before any of them recorded the use, and the tool would run once per call.
+    const id = signed?.receipt.id;
+    if (id !== undefined && this.inFlight.has(id)) {
+      throw new ExecutionRefused("The receipt is already being used by another call.");
+    }
+    if (id !== undefined) this.inFlight.add(id);
+    try {
+      await this.authorize(call, signed, approval);
+      // Single use: consumed before running, so a failing tool cannot be retried on the same receipt.
+      this.usedReceipts.add(signed!.receipt.id);
+    } finally {
+      // A refused call releases its claim, so the receipt can still be used once it is approved.
+      if (id !== undefined) this.inFlight.delete(id);
+    }
     return this.tools[call.tool](state, call.args);
   }
 }

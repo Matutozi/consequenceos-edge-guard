@@ -62,42 +62,57 @@ export function toProposal(call: ToolCall, meta: ToolMeta & { registered: boolea
 
 const noModel = { assessment: null, inferenceSource: "NONE" } as const;
 
-/**
- * The separate targets a fanout argument names: a list, or a string holding several IDs
- * separated by commas, semicolons or spaces. One ID is one target.
- */
-export function fanoutTargets(target: unknown): number {
-  if (Array.isArray(target)) return target.length;
-  if (typeof target !== "string") return 1;
-  return target.split(/[,;\s]+/).filter(Boolean).length;
+const TARGET_SEPARATORS = /[,;|&\s]+/;
+
+/** Every string a fanout argument holds, however it is shaped: a string, a list, an object, or nested. */
+function targetLeaves(target: unknown): string[] {
+  if (typeof target === "string") return [target];
+  if (typeof target === "number" || typeof target === "bigint" || typeof target === "boolean") return [String(target)];
+  if (Array.isArray(target)) return target.flatMap(targetLeaves);
+  if (target && typeof target === "object") return Object.values(target).flatMap(targetLeaves);
+  return [];
 }
 
 /**
- * A wildcard target means the call acts on everything, and a list of targets means it
- * acts on several at once (eval M22: every user, listed by name to dodge the wildcard).
- * Never leave either to a model.
+ * The separate targets a fanout argument names, whatever its shape: a list, an object of
+ * IDs, nested lists, or a string holding several IDs separated by commas, semicolons, pipes,
+ * ampersands or spaces. One ID is one target; a missing or empty argument names none.
+ */
+export function fanoutTargets(target: unknown): string[] {
+  return targetLeaves(target).flatMap((leaf) => leaf.split(TARGET_SEPARATORS).filter(Boolean));
+}
+
+/** A wildcard anywhere in the argument, even inside a list (["all"]) or as a glob ("ada*"). */
+function namesWildcard(target: unknown, wildcards: string[]): boolean {
+  return targetLeaves(target).some(
+    (leaf) =>
+      isWildcardTarget(leaf, wildcards) ||
+      leaf.includes("*") ||
+      leaf.split(TARGET_SEPARATORS).some((piece) => isWildcardTarget(piece, wildcards)),
+  );
+}
+
+/**
+ * A call on a fanout tool must name exactly one target, and not a wildcard, to reach the
+ * assessor. A wildcard means it acts on everything; several targets mean it acts on many at
+ * once (eval M22: every user, listed by name to dodge the wildcard); no target leaves the
+ * scope to the tool, which may read it as "all". The shape of the argument does not matter:
+ * ["all"] is a wildcard and ["a,b"] is two targets. Never leave any of these to a model.
  */
 function evaluateFanout(call: ToolCallRecord, meta: ToolMeta, wildcards: string[]): GuardDecision | undefined {
   if (!meta.fanout) return undefined;
-  const target = call.args[meta.fanout.arg];
-  const count = fanoutTargets(target);
-  if (!isWildcardTarget(target, wildcards) && count > 1) {
-    return {
-      decision: "require_approval",
-      rationale: [
-        `${call.tool} names ${count} targets at once (${meta.fanout.arg}: ${JSON.stringify(target)}), so a person has to approve it. ` +
-          "Decided by rule, with no model call.",
-      ],
-    };
-  }
-  if (!isWildcardTarget(target, wildcards)) return undefined;
-  return {
+  const { arg } = meta.fanout;
+  const target = call.args[arg];
+  const shown = target === undefined ? "missing" : JSON.stringify(target);
+  const escalate = (what: string): GuardDecision => ({
     decision: "require_approval",
-    rationale: [
-      `${call.tool} targets everyone (${meta.fanout.arg}: ${JSON.stringify(target)}), so a person has to approve it. ` +
-      "Decided by rule, with no model call.",
-    ],
-  };
+    rationale: [`${call.tool} ${what} (${arg}: ${shown}), so a person has to approve it. Decided by rule, with no model call.`],
+  });
+  if (namesWildcard(target, wildcards)) return escalate("targets everyone");
+  const count = fanoutTargets(target).length;
+  if (count === 0) return escalate("names no target");
+  if (count > 1) return escalate(`names ${count} targets at once`);
+  return undefined;
 }
 
 function isFastPath(meta: ToolMeta, policy: PolicyConfig): boolean {

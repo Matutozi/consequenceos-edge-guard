@@ -4,7 +4,7 @@ import { createDecisionReceipt } from "../../src/domain/receipt";
 import type { ActionProposal, DecisionReceipt } from "../../src/domain/types";
 import { ASSESSOR_ADDRESS_PATTERNS } from "../../src/ops/toolGuard";
 import { amountIn } from "./classify";
-import type { GuardResult, PageAction } from "./messages";
+import { CLOUD_SEES, type GuardResult, type PageAction } from "./messages";
 
 /**
  * Edge Guard for a click on a web page: the same engine as the web app. Rules first, then
@@ -37,13 +37,13 @@ const ALWAYS_ASK: Partial<Record<PageAction["category"], string>> = {
 function decidedBy(receipt: DecisionReceipt, byRule: boolean): string {
   if (byRule) return "a fixed rule";
   if (receipt.secondOpinion?.status === "agreed" || receipt.secondOpinion?.status === "stricter") {
-    return "Gemini Nano on this computer, double-checked by Gemini in the cloud (which saw only the button label and the site)";
+    return `Gemini Nano on this computer, double-checked by Gemini in the cloud (which saw only ${CLOUD_SEES})`;
   }
   switch (receipt.inferenceSource) {
     case "ON_DEVICE":
       return "Gemini Nano, on this computer";
     case "IN_CLOUD":
-      return "Gemini in the cloud, which saw only the button label and the site";
+      return `Gemini in the cloud, which saw only ${CLOUD_SEES}`;
     default:
       // No model answered: on-device AI missing for private actions, a timeout, or offline.
       return "nobody yet: the AI check could not run, so it comes to you";

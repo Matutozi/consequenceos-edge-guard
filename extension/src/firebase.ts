@@ -25,8 +25,6 @@ const firebaseConfig = {
 
 let firebaseApp: FirebaseApp | undefined;
 
-export const hasCloudToken = () => !!import.meta.env.VITE_EXTENSION_APPCHECK_DEBUG_TOKEN;
-
 export function getFirebaseApp(): FirebaseApp {
   if (firebaseApp) return firebaseApp;
   const missing = Object.entries(firebaseConfig)

@@ -234,6 +234,38 @@ describe("Executor", () => {
     await ex.execute(state, callRecord(c), signed);
     await expect(ex.execute(state, callRecord(c), signed)).rejects.toThrow(/already been used/);
   });
+
+  it("runs an approved call once when the same receipt is used by several calls at once", async () => {
+    // Found in the audit: three concurrent calls with one approved receipt sent three emails,
+    // because the approval check awaits between the "already used" check and recording the use.
+    const c = call("email_user", { to: "partner@outside.example", subject: "Hi", body: "Hello" });
+    const signed = await guard(c);
+    expect(signed.receipt.decision.decision).toBe("require_approval");
+    const approval = await approveReceipt(signed, "mei.lin", signer);
+    const ex = executor();
+    const results = await Promise.allSettled([1, 2, 3].map(() => ex.execute(state, callRecord(c), signed, approval)));
+    const ran = results.filter((r): r is PromiseFulfilledResult<{ state: typeof state; output: string }> => r.status === "fulfilled");
+    expect(ran).toHaveLength(1);
+    expect(ran[0].value.state.outbox).toHaveLength(state.outbox.length + 1);
+    for (const r of results.filter((r) => r.status === "rejected")) {
+      expect((r as PromiseRejectedResult).reason).toBeInstanceOf(ExecutionRefused);
+    }
+    await expect(ex.execute(state, callRecord(c), signed, approval)).rejects.toThrow(/already been used/);
+  });
+
+  it("still accepts a receipt after a refused attempt released it", async () => {
+    const c = call("disable_user", { userId: "ada.okafor" });
+    const signed = await guard(c);
+    const ex = executor();
+    const approval = await approveReceipt(signed, "mei.lin", signer);
+    const [refused, approved] = await Promise.allSettled([
+      ex.execute(state, callRecord(c), signed),
+      ex.execute(state, callRecord(c), signed, approval),
+    ]);
+    expect(refused.status).toBe("rejected");
+    expect(approved.status).toBe("rejected"); // the first call held the receipt
+    await expect(ex.execute(state, callRecord(c), signed, approval)).resolves.toBeDefined();
+  });
 });
 
 describe("text addressed to the assessor", () => {
@@ -287,5 +319,52 @@ describe("a list of targets in a fanout argument", () => {
   it("leaves a single target to the assessor", async () => {
     await guard(call("revoke_sessions", { userId: " ada.okafor " }));
     expect(analyzeAction).toHaveBeenCalledOnce();
+  });
+
+  it("leaves a single target in a one-item list to the assessor", async () => {
+    await guard(call("revoke_sessions", { userId: ["ada.okafor"] }));
+    expect(analyzeAction).toHaveBeenCalledOnce();
+  });
+});
+
+describe("the fanout rule, whatever shape the target takes", () => {
+  // Found in the audit: each of these reached the assessor instead of a person.
+  const decided = async (userId: unknown) => {
+    const { receipt } = await guard(call("revoke_sessions", { userId }));
+    return { decision: receipt.decision.decision, why: receipt.decision.rationale[0] };
+  };
+
+  it("finds a wildcard inside a list, an object or a glob", async () => {
+    for (const userId of [["all"], [" Everyone "], { who: "*" }, [["all"]], "ada*", "*@northwind.example"]) {
+      expect(await decided(userId)).toEqual({ decision: "require_approval", why: expect.stringMatching(/targets everyone/) });
+    }
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("counts every target in a list of lists, an object, or a string inside a list", async () => {
+    const cases: [unknown, number][] = [
+      [["ada.okafor,tomas.reyes,mei.lin"], 3],
+      [{ 0: "ada.okafor", 1: "tomas.reyes" }, 2],
+      [[["ada.okafor"], ["tomas.reyes"]], 2],
+      ["ada.okafor|tomas.reyes", 2],
+      ["ada.okafor&tomas.reyes", 2],
+      ["ada.okafor\ntomas.reyes", 2],
+    ];
+    for (const [userId, count] of cases) {
+      expect(await decided(userId)).toEqual({
+        decision: "require_approval",
+        why: expect.stringMatching(new RegExp(`names ${count} targets at once`)),
+      });
+    }
+    expect(analyzeAction).not.toHaveBeenCalled();
+  });
+
+  it("sends a call that names no target to a person: the tool might read it as everyone", async () => {
+    for (const args of [{}, { userId: "" }, { userId: [] }, { userId: {} }, { userId: null }, { userId: " , " }]) {
+      const { receipt } = await guard(call("revoke_sessions", args));
+      expect(receipt.decision.decision).toBe("require_approval");
+      expect(receipt.decision.rationale[0]).toMatch(/names no target/);
+    }
+    expect(analyzeAction).not.toHaveBeenCalled();
   });
 });

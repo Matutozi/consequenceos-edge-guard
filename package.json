@@ -10,8 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:extension": "vite build -c vite.extension.config.ts && EXTENSION_PART=content vite build -c vite.extension.config.ts",
-    "zip:extension": "npm run build:extension && cd extension/dist && rm -f ../edge-guard-extension.zip && python3 -m zipfile -c ../edge-guard-extension.zip * && echo extension/edge-guard-extension.zip",
-    "release:extension": "npm run zip:extension && cp extension/edge-guard-extension.zip public/extension/edge-guard-extension.zip && npm run build && echo 'Ready: npx firebase-tools deploy --only hosting'"
+    "zip:extension": "npm run build:extension && cd extension/dist && rm -f ../edge-guard-extension.zip && python3 -m zipfile -c ../edge-guard-extension.zip * && echo 'extension/edge-guard-extension.zip has the App Check debug token: share it with judges privately, never publish it.'",
+    "zip:extension:public": "VITE_EXTENSION_APPCHECK_DEBUG_TOKEN= npm run build:extension && vite-node scripts/check-no-secrets.ts extension/dist && cd extension/dist && rm -f ../edge-guard-extension-public.zip && python3 -m zipfile -c ../edge-guard-extension-public.zip * && echo extension/edge-guard-extension-public.zip",
+    "release:extension": "npm run zip:extension:public && cp extension/edge-guard-extension-public.zip public/extension/edge-guard-extension.zip && npm run build && vite-node scripts/check-no-secrets.ts public/extension dist && echo 'Ready: npx firebase-tools deploy --only hosting'"
   },
   "dependencies": {
     "firebase": "^13.0.0",
