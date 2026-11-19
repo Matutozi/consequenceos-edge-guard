@@ -46,11 +46,11 @@ export default function App() {
 
   useEffect(() => applyTheme(theme), [theme]);
 
+  // Single action (#/inspector) and Integrations (#/integrations) still work at their
+  // addresses; the console links to Integrations. The bar keeps to the four that tell the story.
   const nav: [Route["view"], string, string][] = [
     ["console", "#/console", "Console"],
-    ["inspector", "#/inspector", "Single action"],
     ["verify", "#/verify", "Verify"],
-    ["integrations", "#/integrations", "Integrations"],
     ["policy", "#/policy", "Policy"],
     ["evals", "#/evals", "Evals"],
   ];

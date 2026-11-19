@@ -33,13 +33,14 @@ export function PhonePairing({ disabled }: { disabled: boolean }) {
 
   return (
     <div className="pairing">
-      <p className="quiet">
-        Approver phone:{" "}
-        {trusted.length ? `paired, ${trusted.map(formatFingerprint).join(", ")}` : "none paired, approvals happen here"}{" "}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={toggle} disabled={disabled} aria-expanded={open}>
+      <div className="pairing-row">
+        <p className="quiet">
+          Approver phone: {trusted.length ? `paired, ${trusted.map(formatFingerprint).join(", ")}` : "none, approvals happen here"}
+        </p>
+        <button type="button" className="btn btn-sm" onClick={toggle} disabled={disabled} aria-expanded={open}>
           {open ? "Close" : trusted.length ? "Manage" : "Pair a phone"}
         </button>
-      </p>
+      </div>
       {open && (
         <div className="pairing-panel">
           <p className="quiet">

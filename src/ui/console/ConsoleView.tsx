@@ -6,7 +6,6 @@ import { INJECTED_INSTRUCTION, type NorthwindState } from "../../ops/northwind";
 import { PLANNER_MODEL } from "../../ops/planner";
 import type { LoadedRegistry } from "../../ops/registryConfig";
 import { useDeviceModel } from "../../useDeviceModel";
-import { canonicalJson } from "../../domain/receipt";
 import { decisionBadge, decisionLabel, formatArgs, receiptRoute, truncate, wentToCloud } from "../format";
 import { deleteManualTicket } from "../../intake/adapters/manual";
 import { sourceLabel, type Ticket } from "../../intake";
@@ -152,6 +151,7 @@ export default function ConsoleView() {
           </ul>
         )}
         {queue.errors.map((e) => <p key={e} className="state state-error">{e}</p>)}
+        <p className="pane-foot"><a href="#/integrations">Where tickets come from</a></p>
       </nav>
 
       <main className="pane pane-main" aria-label="Northwind ops">
@@ -232,9 +232,8 @@ export default function ConsoleView() {
           </ol>
           {cloudChecks > 0 && (
             <p className="quiet">
-              {cloudChecks} {cloudChecks === 1 ? "check" : "checks"} went to the cloud: either Gemini Nano was not ready, or
-              it would allow the call and the cloud gave a second opinion. Each sent only the tool name, arguments, the
-              agent's reason and the registry description. Sensitive data never goes.
+              {cloudChecks} {cloudChecks === 1 ? "check" : "checks"} went to the cloud, with the call and its reason only.
+              Sensitive data never goes.
             </p>
           )}
         </section>
@@ -252,11 +251,18 @@ export default function ConsoleView() {
         onDecide={decide}
       >
         <DeviceModelPanel model={deviceModel} disabled={running} />
-        <p className="quiet" title={agent.registry?.fallbackReason}>Registry: {registryLine(agent.registry)}</p>
         <PhonePairing disabled={running} />
-        <p className="quiet" title={agent.auditError || undefined}>
-          Audit log: {agent.auditError ? "not recording, Firestore is unavailable" : "Cloud Firestore"}
-        </p>
+        {agent.registry?.unreachable ? (
+          <p className="text-deny" title={agent.registry.fallbackReason}>Registry: {registryLine(agent.registry)}</p>
+        ) : (
+          <p className="quiet" title={`Registry: ${registryLine(agent.registry)}`}>
+            Registry: {agent.registry?.source === "remote-config" ? "Remote Config" : agent.registry ? "bundled" : "loading"}
+            {" · "}
+            <span title={agent.auditError || undefined}>
+              Audit log: {agent.auditError ? "not recording" : "Firestore"}
+            </span>
+          </p>
+        )}
         <p className="shortcuts">
           <span><kbd>j</kbd> <kbd>k</kbd> move between steps</span>
           <span><kbd>a</kbd> approve</span>
@@ -267,26 +273,32 @@ export default function ConsoleView() {
   );
 }
 
+/** What became of a step, in a word or two, for its row. The inspector has the rest. */
+const shortOutcome: Partial<Record<StepState["phase"], string>> = {
+  executed: "Ran",
+  refused: "Refused",
+  rejected: "Rejected",
+  error: "Not run",
+  awaiting: "Waiting",
+};
+
 function StepRow({ step, index, selected, onSelect }: { step: StepState; index: number; selected: boolean; onSelect: () => void }) {
   const receipt = step.signed?.receipt;
-  const outcome =
-    step.phase === "executed"
-      ? `Ran. ${step.output ?? ""}`
-      : step.phase === "refused"
-        ? "Executor refused it."
-        : step.phase === "rejected"
-          ? "Rejected by a person."
-          : step.phase === "error"
-            ? `Not run. ${step.error ?? ""}`
-            : step.phase === "awaiting"
-              ? "Waiting for approval."
-              : "";
+  // The full line (where it was decided, how fast, the tool's output) stays one hover away.
+  const full = [
+    receipt && receiptRoute(receipt, step.ms),
+    step.phase === "executed" ? `Ran. ${step.output ?? ""}` : step.phase === "error" ? `Not run. ${step.error ?? ""}` : shortOutcome[step.phase],
+  ]
+    .filter(Boolean)
+    .join(". ");
+  const outcome = shortOutcome[step.phase];
   return (
-    <button type="button" className="step" aria-current={selected ? "true" : undefined} onClick={onSelect}>
+    <button type="button" className="step" aria-current={selected ? "true" : undefined} onClick={onSelect} title={truncate(full, 300)}>
       <span className="n">{index + 1}</span>
-      <span className="call" title={`${step.plan.call.tool}(${canonicalJson(step.plan.call.args)})`}>
+      <span className="call">
         {step.plan.call.tool}({formatArgs(step.plan.call.args, 28)})
       </span>
+      <span className={`outcome${step.phase === "executed" || step.phase === "awaiting" ? "" : " text-deny"}`}>{outcome}</span>
       <span className="status">
         {receipt ? (
           <span className={decisionBadge[receipt.decision.decision]}>{decisionLabel[receipt.decision.decision]}</span>
@@ -297,9 +309,6 @@ function StepRow({ step, index, selected, onSelect }: { step: StepState; index: 
             <LoaderCircle className="spin" size={13} aria-hidden="true" /> Checking
           </>
         )}
-      </span>
-      <span className="line">
-        {[receipt && receiptRoute(receipt, step.ms), truncate(outcome, 120)].filter(Boolean).join(". ")}
       </span>
     </button>
   );
