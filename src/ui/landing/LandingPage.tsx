@@ -29,9 +29,14 @@ export default function LandingPage() {
           for that exact call.
         </p>
         <div className="presets">
-          <a className="btn btn-primary" href="#/console">Open the console</a>
+          <a className="btn btn-primary" href="#/tour">Take the guided tour</a>
+          <a className="btn" href="#/console">Open the console</a>
           <a className="btn" href="#/verify">Verify a receipt</a>
         </div>
+        <p className="quiet">
+          The tour runs one attack from start to finish: routine work allowed, a person asked, the attack
+          blocked by rule, and the signed receipt verified.
+        </p>
       </section>
 
       <section className="landing-built" aria-labelledby="built-heading">

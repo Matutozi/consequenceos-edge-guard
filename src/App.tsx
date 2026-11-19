@@ -12,6 +12,7 @@ import VerifyPage from "./verify/VerifyPage";
 type Route =
   | { view: "landing" }
   | { view: "console" }
+  | { view: "tour" }
   | { view: "inspector" }
   | { view: "evals" }
   | { view: "policy" }
@@ -21,6 +22,7 @@ type Route =
 function routeFromHash(): Route {
   const hash = window.location.hash;
   if (hash === "#/console") return { view: "console" };
+  if (hash === "#/tour") return { view: "tour" };
   if (hash === "#/inspector") return { view: "inspector" };
   if (hash === "#/evals") return { view: "evals" };
   if (hash === "#/policy") return { view: "policy" };
@@ -64,7 +66,7 @@ export default function App() {
         </a>
         <nav className="nav" aria-label="Views">
           {nav.map(([view, href, label]) => (
-            <a key={view} href={href} aria-current={route.view === view ? "page" : undefined}>{label}</a>
+            <a key={view} href={href} aria-current={route.view === view || (view === "console" && route.view === "tour") ? "page" : undefined}>{label}</a>
           ))}
         </nav>
         <div className="topbar-end">
@@ -87,7 +89,9 @@ export default function App() {
         {route.view === "landing" ? (
           <LandingPage />
         ) : route.view === "console" ? (
-          <ConsoleView />
+          <ConsoleView key="console" />
+        ) : route.view === "tour" ? (
+          <ConsoleView key="tour" tour />
         ) : route.view === "verify" ? (
           <VerifyPage receiptId={route.receiptId} />
         ) : route.view === "integrations" ? (

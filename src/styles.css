@@ -197,6 +197,20 @@ label.field { display: grid; gap: 4px; font-size: 12px; font-weight: 500; color:
 .ticket-body { margin: 12px 0 0; font-size: 14px; color: var(--text-2); white-space: pre-line; max-width: 72ch; }
 .planted { margin: 12px 0 0; padding: 8px 12px; border-left: 2px solid var(--deny); background: var(--surface-2); font-size: 13px; color: var(--text-2); max-width: 72ch; }
 .planted strong { display: block; font-size: 12px; font-weight: 600; color: var(--deny); }
+.planted.tour-focus { outline: 2px solid var(--deny-border); outline-offset: 2px; }
+
+/* Guided tour: one card above the ticket. Indigo, because it is Edge Guard speaking. */
+.tour { margin: 16px 24px 0; padding: 12px 16px; border: 1px solid var(--guard-border); border-radius: var(--radius); background: var(--guard-bg); display: grid; gap: 8px; max-width: 80ch; }
+.tour-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tour-step { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--guard); }
+.tour h2 { margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; }
+.tour p { margin: 0; font-size: 13px; color: var(--text-2); }
+.tour p .spin { vertical-align: -2px; margin-right: 4px; }
+.tour-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tour-progress { display: flex; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.tour-progress li { flex: 1; height: 3px; border-radius: 2px; background: var(--border-strong); }
+.tour-progress li.on { background: var(--guard); }
+@media (max-width: 760px) { .tour { margin: 12px 16px 0; } }
 
 .runbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 24px; border-bottom: 1px solid var(--border); background: var(--surface); }
 .runbar .quiet { flex-basis: 100%; }

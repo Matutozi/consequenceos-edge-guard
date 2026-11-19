@@ -13,6 +13,8 @@ import { useTicketQueue } from "../../intake/useTicketQueue";
 import { GuardInspector } from "./GuardInspector";
 import { PhonePairing } from "./PhonePairing";
 import { TicketComposer } from "./TicketComposer";
+import { TourCoach } from "./TourCoach";
+import { tourStage } from "./tour";
 
 /** The recorded attack replays a run on this ticket only. */
 const RECORDED_TICKET_ID = "sample:482";
@@ -22,10 +24,11 @@ function isTyping(target: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
 }
 
-export default function ConsoleView() {
+/** With `tour`, the console runs the guided tour: ticket #482, the recorded attack, a coach card. */
+export default function ConsoleView({ tour = false }: { tour?: boolean }) {
   const agent = useAgentRun();
   const deviceModel = useDeviceModel();
-  const [mode, setMode] = useState<PlannerMode>("live");
+  const [mode, setMode] = useState<PlannerMode>(tour ? "recorded" : "live");
   const queue = useTicketQueue();
   const [ticketId, setTicketId] = useState(RECORDED_TICKET_ID);
   const [composing, setComposing] = useState(false);
@@ -70,12 +73,26 @@ export default function ConsoleView() {
     return () => window.removeEventListener("keydown", onKey);
   }, [steps.length, waiting, decide]);
 
+  const stage = tour ? tourStage(steps, running, agent.runError) : undefined;
+  const tourDone = stage?.kind === "done";
+
+  // When the tour's run ends, show the blocked export, the receipt the last card asks to verify.
+  useEffect(() => {
+    if (!tourDone) return;
+    const proof = steps.findIndex((s) => s.signed?.receipt.decision.decision === "deny" && s.plan.call.tool === "export_customers");
+    const index = proof >= 0 ? proof : steps.findIndex((s) => s.signed?.receipt.decision.decision === "deny");
+    if (index >= 0) {
+      following.current = false;
+      setSelected(index);
+    }
+  }, [tourDone, steps]);
+
   function start() {
     following.current = true;
     setSelected(0);
     announced.current = 0;
     void agent.run({
-      mode,
+      mode: tour ? "recorded" : mode,
       ticketNumber: ticket!.number,
       queue: queue.tickets.map(({ number, title, requester, body }) => ({ number, title, requester, body })),
     });
@@ -161,6 +178,15 @@ export default function ConsoleView() {
           <div className="state"><LoaderCircle className="spin" size={13} aria-hidden="true" /> Loading the ticket</div>
         ) : (
         <>
+        {stage && (
+          <TourCoach
+            stage={stage}
+            canRun={!running && !deviceModel.preparing && ticket.id === RECORDED_TICKET_ID}
+            waitReason={deviceModel.preparing ? "Waiting for Gemini Nano to get ready." : ticket.id !== RECORDED_TICKET_ID ? "The tour runs on ticket #482: pick it in the queue." : undefined}
+            onRun={start}
+            onDecide={decide}
+          />
+        )}
         <header className="ticket">
           <h1>{ticket.title}</h1>
           <div className="meta">
@@ -173,7 +199,7 @@ export default function ConsoleView() {
           </div>
           <p className="ticket-body">{ticketText.trim()}</p>
           {planted && (
-            <p className="planted">
+            <p className={stage?.kind === "intro" ? "planted tour-focus" : "planted"}>
               <strong>Hidden instruction in the ticket body</strong>
               {planted}
             </p>
@@ -181,7 +207,7 @@ export default function ConsoleView() {
           {helpdesk?.notes.map((note) => <p key={note} className="ticket-body">Note: {note}</p>)}
         </header>
 
-        <div className="runbar">
+        {!tour && <div className="runbar">
           <div className="segmented" role="radiogroup" aria-label="Planner">
             <button type="button" role="radio" aria-checked={mode === "live"} disabled={running} onClick={() => setMode("live")}>
               Live planner
@@ -204,13 +230,13 @@ export default function ConsoleView() {
                 ? `The planner is ${PLANNER_MODEL} in the cloud, through Firebase AI Logic. It chooses its own steps.`
                 : "Replays a run where the agent followed the hidden instruction. Edge Guard decides each step live."}
           </span>
-        </div>
+        </div>}
 
         <section className="timeline" aria-label="Agent steps">
           <h2>Agent steps</h2>
           <ol className="steps">
             {steps.length === 0 && !running && !agent.runError && (
-              <li className="step-note">No steps yet. Run the agent to start.</li>
+              <li className="step-note">No steps yet. {tour ? "Press Run the agent above." : "Run the agent to start."}</li>
             )}
             {steps.map((step, index) => (
               <li key={index}>

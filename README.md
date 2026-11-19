@@ -20,6 +20,10 @@ sensitive ones to a person.
 
 ## What you can do
 
+- **Guided tour** (`#/tour`, the first button on the landing page): runs the recorded attack
+  on ticket #482 with a card that says what is happening at each step: routine work allowed,
+  a person asked, the attack blocked by rule, where each check ran, and a link to verify the
+  blocked export's receipt and tamper with it. Start here if you have five minutes.
 - **Console** (`#/console`): pick a ticket, run the agent, and watch each step get
   allowed, escalated or blocked. The Edge Guard inspector shows the decision, the
   reason, where it was decided and how long it took, what was sent to the cloud, the
