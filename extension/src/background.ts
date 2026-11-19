@@ -47,9 +47,9 @@ const historyItem = (action: PageAction, outcome: HistoryItem["outcome"], by: st
  * page, can click anything inside the page, including an "Allow" button drawn there; it
  * cannot reach this window.
  */
-async function askPerson(tabId: number, action: PageAction, result: GuardResponse["result"]): Promise<GuardResponse> {
+async function askPerson(tabId: number, frameId: number, action: PageAction, result: GuardResponse["result"]): Promise<GuardResponse> {
   const id = crypto.randomUUID();
-  const pending: Pending = { id, tabId, action, result };
+  const pending: Pending = { id, tabId, frameId, action, result };
   await chrome.storage.session.set({ [pendingKey(id)]: pending });
   const window = await chrome.windows.create({
     url: chrome.runtime.getURL(`approve.html?id=${id}`),
@@ -62,13 +62,13 @@ async function askPerson(tabId: number, action: PageAction, result: GuardRespons
   return { status: "pending", id, result };
 }
 
-async function handleAction(tabId: number, action: PageAction): Promise<GuardResponse> {
+async function handleAction(tabId: number, frameId: number, action: PageAction): Promise<GuardResponse> {
   const result = await guardPageAction(action);
   if (result.decision === "allow") {
     await record(historyItem(action, "allowed", result.decidedBy, result.explanation, result.digest));
     return { status: "allow", result };
   }
-  return askPerson(tabId, action, result);
+  return askPerson(tabId, frameId, action, result);
 }
 
 async function handleScan(tabId: number, message: Extract<ToBackground, { type: "scan" }>): Promise<ScanReport> {
@@ -100,7 +100,12 @@ chrome.runtime.onMessage.addListener((message: ToBackground, sender, sendRespons
       } else if (tabId === undefined) {
         sendResponse({ error: "Edge Guard only acts on messages from a page." });
       } else if (message.type === "guard-action") {
-        sendResponse(await handleAction(tabId, message.action));
+        sendResponse(await handleAction(tabId, sender.frameId ?? 0, message.action));
+      } else if (message.type === "toast") {
+        // A frame's status card, shown by the top page, where there is room for it.
+        const toast: ToContent = { type: "toast", kind: message.kind, text: message.text };
+        await chrome.tabs.sendMessage(tabId, toast, { frameId: 0 }).catch(() => undefined);
+        sendResponse({ ok: true });
       } else if (message.type === "scan") {
         sendResponse(await handleScan(tabId, message));
       }
@@ -119,7 +124,7 @@ chrome.windows.onRemoved.addListener(async (windowId) => {
     if (!key.startsWith("pending:") || pending.windowId !== windowId) continue;
     await chrome.storage.session.remove(key);
     const decision: ToContent = { type: "decision", id: pending.id, allow: false };
-    await chrome.tabs.sendMessage(pending.tabId, decision).catch(() => undefined);
+    await chrome.tabs.sendMessage(pending.tabId, decision, { frameId: pending.frameId ?? 0 }).catch(() => undefined);
     await record(
       historyItem(pending.action, "blocked", "you (the window was closed without an answer)", pending.result.explanation, pending.result.digest),
     );

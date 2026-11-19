@@ -90,13 +90,18 @@ describe("what people are told the cloud sees", () => {
   // the disclosure names it.
   const disclosed: Record<"label" | keyof PageAction["page"], { marker: string; named: RegExp }> = {
     label: { marker: "Send LABEL-MARK", named: /button's label/ },
-    host: { marker: "host-mark.example", named: /the site/ },
+    host: { marker: "host-mark.example", named: /the site names/ },
     title: { marker: "TITLE-MARK", named: /the page title/ },
+    embeddedIn: { marker: "embedder-mark.example", named: /the site names/ },
   };
 
   it("names every page field the proposal carries", () => {
     const sent = JSON.stringify(
-      toProposal({ ...action("Send"), label: disclosed.label.marker, page: { host: disclosed.host.marker, title: disclosed.title.marker } }),
+      toProposal({
+        ...action("Send"),
+        label: disclosed.label.marker,
+        page: { host: disclosed.host.marker, title: disclosed.title.marker, embeddedIn: disclosed.embeddedIn.marker },
+      }),
     );
     for (const { marker, named } of Object.values(disclosed)) {
       expect(sent).toContain(marker);
@@ -115,5 +120,13 @@ describe("what people are told the cloud sees", () => {
     analyzeAction.mockResolvedValueOnce(rated("low")).mockResolvedValueOnce(rated("low", "IN_CLOUD"));
     const result = await guardPageAction(action("Send"));
     expect(result.decidedBy).toMatch(new RegExp(`double-checked by Gemini in the cloud \\(which saw only ${CLOUD_SEES}\\)`));
+  });
+});
+
+describe("a click inside an embedded frame", () => {
+  it("tells the assessor which site embeds the frame", () => {
+    const framed = { ...action("Pay $40"), page: { host: "js.payments.example", title: "Card", embeddedIn: "travel.example" } };
+    expect(toProposal(framed).action).toBe('Click "Pay $40" on js.payments.example (in a frame embedded in travel.example): a payment of $40.');
+    expect(toProposal(action("Pay $40")).action).not.toMatch(/frame/);
   });
 });

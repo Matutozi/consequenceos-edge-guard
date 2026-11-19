@@ -83,7 +83,7 @@ Gemini Nano's one-line view instead; retake them there if you want that state sh
 | Permission | Type | Justification |
 |------------|------|---------------|
 | `storage` | permissions | Keeps the on/off setting and the list of recent decisions in the user's browser, and holds a paused action while its approval window is open. |
-| `http://*/*`, `https://*/*` (content script, shown as "Host permission" in the dashboard) | content_scripts matches | The extension must see a click on a "Pay", "Send", "Delete" or "Share" button on any site in order to pause it, and must read a page to find hidden instructions aimed at AI agents. It reads button labels and page text; it never reads what the user types into forms (only whether a password field is filled, to stop a password going to another site). |
+| `http://*/*`, `https://*/*` (content script, shown as "Host permission" in the dashboard) | content_scripts matches | The extension must see a click on a "Pay", "Send", "Delete" or "Share" button on any site in order to pause it, including inside embedded frames, where checkouts and sharing dialogs often are, and must read a page to find hidden instructions aimed at AI agents. It reads button labels, the names and labels of form fields, and page text; it never reads what the user types into forms (only whether a password field is filled, to stop a password going to another site). |
 
 ## Privacy & Data Use
 
@@ -99,7 +99,7 @@ Gemini Nano's one-line view instead; retake them there if you want that state sh
 | Authentication info | No | No | Only whether a password field is filled; never its value | No |
 | Personal communications | No | No | | No |
 | Location | No | No | | No |
-| Web history | Yes: site names of paused actions | The site name and page title of a message or deletion, to Google Gemini, when the on-device model is unavailable and the build can reach the cloud | Decision history shown to the user; risk check | Google (Gemini API, as the processor of that one check) |
+| Web history | Yes: site names of paused actions | The site names and page title of a message or deletion, to Google Gemini, when the on-device model is unavailable and the build can reach the cloud | Decision history shown to the user; risk check | Google (Gemini API, as the processor of that one check) |
 | User activity | Yes: which button was clicked on a paused action | Its label, as above | As above | As above |
 | Website content | Read locally | Never | Hidden-instruction scan, on the device | No |
 

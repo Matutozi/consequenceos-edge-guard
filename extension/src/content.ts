@@ -1,12 +1,24 @@
 import { classifyAction, type ActionSignals } from "./classify";
 import { contrast, triage, type HiddenHow, type TextBlock } from "./injection";
-import { ENABLED_KEY, type GuardResponse, type PageAction, type ScanReport, type ToBackground, type ToContent } from "./messages";
+import {
+  ENABLED_KEY,
+  type GuardResponse,
+  type PageAction,
+  type ScanReport,
+  type ToastKind,
+  type ToBackground,
+  type ToContent,
+} from "./messages";
+import { fieldsAround, findControl, isLink, labelsOf, looksLikeMoney } from "./target";
 
 /**
- * Runs in every page. Stops consequential clicks and submissions until Edge Guard has
- * decided, replays them when allowed, and gathers the page's hidden text for the scanner.
+ * Runs in every page and every frame in it (a checkout or a share dialog is often an
+ * embedded frame). Stops consequential clicks and submissions until Edge Guard has decided,
+ * replays them when allowed, and, in the top page, gathers hidden text for the scanner.
  * It reads labels and form structure only, never what is typed into a form.
  */
+
+const isTop = window === window.top;
 
 let enabled = true;
 void (async () => {
@@ -22,8 +34,6 @@ const alive = () => !!chrome.runtime?.id;
 
 // ---------------------------------------------------------------- actions
 
-const CONTROLS =
-  'button, a, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [role="link"], [role="menuitem"]';
 const CARD_FIELDS =
   'input[autocomplete~="cc-number"], input[name*="cardnumber" i], input[name*="card_number" i], input[name*="ccnum" i], input[id*="cardnumber" i], input[id*="card-number" i]';
 
@@ -31,18 +41,20 @@ const CARD_FIELDS =
 const passes = new WeakSet<Element>();
 const pendingReplays = new Map<string, () => void>();
 
-function labelOf(el: Element): string {
-  const input = el as HTMLInputElement;
-  return (
-    (el instanceof HTMLInputElement ? input.value : "") ||
-    el.getAttribute("aria-label") ||
-    (el as HTMLElement).innerText ||
-    el.getAttribute("title") ||
-    ""
-  )
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
+const MAX_SHOWN_LABEL = 120;
+const shorten = (text: string) => (text.length > MAX_SHOWN_LABEL ? `${text.slice(0, MAX_SHOWN_LABEL - 1)}…` : text);
+
+/** The site whose page embeds this frame, when it is another site. */
+function embeddingSite(): string | undefined {
+  if (isTop) return undefined;
+  const origins = location.ancestorOrigins;
+  const top = origins && origins.length > 0 ? origins[origins.length - 1] : undefined;
+  try {
+    const host = top && top !== "null" ? new URL(top).host : undefined;
+    return host && host !== location.host ? host : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isSubmitControl(el: Element): boolean {
@@ -50,8 +62,9 @@ function isSubmitControl(el: Element): boolean {
   return el instanceof HTMLInputElement && (el.type === "submit" || el.type === "image");
 }
 
-function signalsFor(el: Element | null, form: HTMLFormElement | null, label: string): ActionSignals {
+function signalsFor(el: Element | null, form: HTMLFormElement | null, control: Element | null): ActionSignals {
   const submits = !el || isSubmitControl(el);
+  const { label, otherLabels } = control ? labelsOf(control) : { label: "", otherLabels: [] };
   let formActionHost: string | undefined;
   try {
     formActionHost = form?.getAttribute("action") ? new URL(form.action).host : undefined;
@@ -60,6 +73,9 @@ function signalsFor(el: Element | null, form: HTMLFormElement | null, label: str
   }
   return {
     label,
+    otherLabels,
+    isLink: !!control && isLink(control),
+    moneyFields: looksLikeMoney(control ? fieldsAround(control, form) : form ? fieldsAround(form, form) : []),
     pageHost: location.host,
     formActionHost,
     formHasCardField: submits && !!form?.querySelector(CARD_FIELDS),
@@ -71,14 +87,22 @@ function signalsFor(el: Element | null, form: HTMLFormElement | null, label: str
 function pageAction(signals: ActionSignals): PageAction | undefined {
   const classified = classifyAction(signals);
   if (!classified) return undefined;
+  // When only a hidden label (aria-label, title) made it consequential, say so: the person sees
+  // "Continue", but the control told an agent "Pay now".
+  const visibleOnly = classifyAction({ ...signals, otherLabels: [] });
+  const shown = signals.label || "Submit";
+  const label =
+    visibleOnly?.category === classified.category || !signals.otherLabels?.length
+      ? shown
+      : `${shown} (labelled “${signals.otherLabels.join("”, “")}” for screen readers and agents)`;
   return {
-    label: signals.label || "Submit",
+    label: shorten(label),
     category: classified.category,
     words: classified.words,
     sensitivity: classified.sensitivity as PageAction["sensitivity"],
     reversible: classified.reversible,
     blockedBecause: classified.blockedBecause,
-    page: { host: location.host, title: document.title },
+    page: { host: location.host, title: document.title, ...(embeddingSite() && { embeddedIn: embeddingSite() }) },
   };
 }
 
@@ -110,14 +134,15 @@ async function check(action: PageAction, replay: () => void): Promise<void> {
 
 function onClick(event: MouseEvent): void {
   if (!enabled || !alive()) return;
-  const el = (event.target as Element | null)?.closest?.(CONTROLS);
+  // Through shadow roots too: open ones by the composed path, closed ones by asking Chrome.
+  const el = findControl(event, (host) => chrome.dom?.openOrClosedShadowRoot(host));
   if (!el) return;
   if (passes.has(el)) {
     passes.delete(el);
     return;
   }
   const form = (el as HTMLButtonElement).form ?? el.closest("form");
-  const action = pageAction(signalsFor(el, form, labelOf(el)));
+  const action = pageAction(signalsFor(el, form, el));
   if (!action) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -137,7 +162,7 @@ function onSubmit(event: SubmitEvent): void {
     return;
   }
   const submitter = event.submitter;
-  const action = pageAction(signalsFor(null, form, submitter ? labelOf(submitter) : ""));
+  const action = pageAction(signalsFor(null, form, submitter));
   if (!action) return;
   event.preventDefault();
   event.stopImmediatePropagation();
@@ -163,6 +188,8 @@ chrome.runtime.onMessage.addListener((message: ToContent) => {
     }
   } else if (message.type === "scan-now") {
     void scan();
+  } else if (message.type === "toast" && isTop) {
+    showToast(message.kind, message.text);
   }
 });
 
@@ -195,7 +222,20 @@ function ui(): ShadowRoot {
   return root;
 }
 
-function toast(kind: "checking" | "waiting" | "allowed" | "blocked", text: string): void {
+/**
+ * Shows a status card. A frame can be a few pixels tall, so a frame asks the top page to show
+ * it instead, through the service worker.
+ */
+function toast(kind: ToastKind, text: string): void {
+  if (isTop) {
+    showToast(kind, text);
+    return;
+  }
+  const message: ToBackground = { type: "toast", kind, text };
+  chrome.runtime.sendMessage(message).catch(() => undefined);
+}
+
+function showToast(kind: ToastKind, text: string): void {
   const slot = ui().querySelector(".slot-toast")!;
   slot.replaceChildren();
   const card = document.createElement("div");
@@ -284,8 +324,9 @@ function collectBlocks(): TextBlock[] {
   return blocks;
 }
 
+/** The top page only: its report and badge are per tab, and frames would overwrite each other's. */
 async function scan(): Promise<void> {
-  if (!alive() || !enabled) return;
+  if (!isTop || !alive() || !enabled) return;
   const { findings, candidates } = triage(collectBlocks());
   try {
     const report = await chrome.runtime.sendMessage<ToBackground, ScanReport | { error: string }>({ type: "scan", findings, candidates });

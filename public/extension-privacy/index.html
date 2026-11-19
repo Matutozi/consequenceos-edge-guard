@@ -23,15 +23,15 @@
       <h2>What Edge Guard reads, on your computer</h2>
       <ul>
         <li>The text of the pages you visit, to find hidden instructions aimed at AI agents. This is checked by rules and, when your computer supports it, by Gemini Nano, an AI model that runs on your computer. It is never sent anywhere.</li>
-        <li>The label of a button you or an AI agent clicks (for example "Pay $1,240"), the website's name and the page title, when the click is a payment, message, deletion, sharing change or password submission.</li>
-        <li>Whether a form has a card-number field, and whether a password field has been filled in. Edge Guard never reads the card number, the password or anything else typed into a form.</li>
+        <li>The labels of a button you or an AI agent clicks (its text, and the labels screen readers and AI agents read, for example "Pay $1,240"), the website's name (and, for a click inside an embedded frame, the name of the site around it) and the page title, when the click is a payment, message, deletion, sharing change or password submission.</li>
+        <li>Whether a form has a card-number field, whether a password field has been filled in, and the names and labels of the fields next to a button (for example "Amount" or "IBAN"), to tell a money transfer from an ordinary form. Edge Guard never reads the card number, the password or anything else typed into a form.</li>
       </ul>
 
       <h2>What may leave your computer</h2>
       <p>
         Only for messages and deletions, and only when the on-device AI is unavailable or to
         double-check its decision to let one through, Edge Guard sends this to Google's Gemini through
-        Google Firebase: the button's label, the type of action, the website's name and the page title.
+        Google Firebase: the button's label, the type of action, the website names and the page title.
         Nothing else. Payments, sharing changes, passwords and page content are never sent.
         Google processes that request under the
         <a href="https://policies.google.com/privacy">Google Privacy Policy</a> and the

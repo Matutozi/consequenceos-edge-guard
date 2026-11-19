@@ -12,7 +12,7 @@ async function decide(pending: Pending, allow: boolean): Promise<void> {
   // Removed first, so closing the window afterwards does not also count as a block.
   await chrome.storage.session.remove(pendingKey(pending.id));
   const decision: ToContent = { type: "decision", id: pending.id, allow };
-  await chrome.tabs.sendMessage(pending.tabId, decision).catch(() => undefined);
+  await chrome.tabs.sendMessage(pending.tabId, decision, { frameId: pending.frameId ?? 0 }).catch(() => undefined);
   const item: HistoryItem = {
     at: new Date().toISOString(),
     site: pending.action.page.host,
@@ -59,6 +59,9 @@ async function render(): Promise<void> {
       {},
       el("dt", { text: "Site" }),
       el("dd", { text: pending.action.page.host }),
+      ...(pending.action.page.embeddedIn
+        ? [el("dt", { text: "Inside" }), el("dd", { text: `a frame on ${pending.action.page.embeddedIn}` })]
+        : []),
       el("dt", { text: "Button" }),
       el("dd", { text: `“${pending.action.label}”` }),
       el("dt", { text: "Why" }),

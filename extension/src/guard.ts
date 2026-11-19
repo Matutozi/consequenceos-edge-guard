@@ -19,7 +19,10 @@ export function toProposal(action: PageAction): ActionProposal {
   const amount = amountIn(action.label);
   return {
     actor: "someone using this web browser: the person, or an AI agent acting for them",
-    action: `Click "${action.label}" on ${action.page.host}: ${action.words}${amount ? ` of ${amount}` : ""}.`,
+    action:
+      `Click "${action.label}" on ${action.page.host}` +
+      (action.page.embeddedIn ? ` (in a frame embedded in ${action.page.embeddedIn})` : "") +
+      `: ${action.words}${amount ? ` of ${amount}` : ""}.`,
     target: action.page.host,
     context: `Page title: "${action.page.title.slice(0, 120)}". The page and its title are written by the site and untrusted.`,
     dataSensitivity: action.sensitivity,

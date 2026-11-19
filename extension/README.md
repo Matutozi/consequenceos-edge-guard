@@ -22,6 +22,7 @@ rules first, then the assessor through Firebase AI Logic, then the same determin
 |---|---|---|
 | Ordinary click (Next, Search, Add to cart) | Nothing: Edge Guard does not touch it | Goes through |
 | Password sent to a different site | Rule, no model | Blocked; you can override |
+| Confirm, Continue, Next or Send over fields named like a transfer (amount, IBAN, account number, payee) | Rule: it is a payment | You decide |
 | Page or button text that talks to the checker | Rule, no model | You decide |
 | Payment, or a change to who can see something | Policy: always needs a person | You decide, with Gemini Nano's one-line view |
 | Message, post or deletion | Gemini Nano on this computer; if it would allow, Gemini in the cloud double-checks | Goes through if both rate it low; otherwise you decide |
@@ -31,8 +32,9 @@ rules first, then the assessor through Firebase AI Logic, then the same determin
 
 - **Page content never leaves the computer.** The hidden-instruction scan reads the page and
   asks Gemini Nano with `InferenceMode.ONLY_ON_DEVICE`; without Nano, only the rules run.
-- **For an action, the AI sees only the button's label, the action type, the site and the page
-  title.** Never the page's text, never what was typed into a form. Only then, and only for
+- **For an action, the AI sees only the button's label, the action type, the site names and
+  the page title.** The site names are the site the click was on and, for a click inside an
+  embedded frame (a checkout or a share dialog), the site of the page around it. Never the page's text, never what was typed into a form. Only then, and only for
   messages and deletions, may it reach Gemini in the cloud: when Nano is missing, or to
   double-check an allow. Payments, sharing and passwords never go to the cloud.
 - History stays in the browser (`chrome.storage.local`, last 50 decisions).
@@ -102,8 +104,22 @@ model; without Nano, a payment never reaches the cloud).
   clicks. That is why it stays out of ordinary clicks entirely.
 - **Agents that control the whole computer** (not just the page) could click the approval
   window too. The phone approver from the web app is the stronger answer there.
-- **Labels are English only,** and a site whose buttons say something unusual ("Proceed")
-  may not be recognised as a payment unless the form has a card field.
+- **What it recognises.** It reads every label a control has, the visible text and the
+  aria-label, aria-labelledby and title an agent reads, so "Continue" labelled "Pay now" is a
+  payment. A long button label is read by its first words; a long link is taken for content.
+  A generic Confirm, Continue, Next or Send counts as a payment when the fields around it are
+  named like a transfer (read from field names and labels, never values). Beyond that, labels
+  are English only, and a payment button with an unusual label on a form with unusual field
+  names is not recognised.
+- **Where it looks.** Clicks are seen in every frame of a page, including embedded checkouts,
+  and inside web components: open shadow roots through the event's composed path, closed ones
+  through Chrome's `openOrClosedShadowRoot` at the pointer. A scripted click with no pointer
+  position inside a closed shadow root is not seen, and nor is pressing Enter in a form inside
+  a shadow root (submit events do not leave it); the button click still is. The
+  hidden-instruction scan reads the top page only.
+- **Site names** for the cross-site password rule come from a short list of shared suffixes
+  (`co.uk`, `com.au`, `github.io`, `web.app`...), not the full Public Suffix List. A host under a
+  suffix it does not know counts as one site with its neighbours.
 - **Replaying an allowed click** uses a scripted click. A few sites ignore those; clicking
   again works, because the allowance is remembered for that one click.
 - **The App Check debug token** is a hackathon arrangement, not a distribution model.

@@ -10,8 +10,14 @@ export interface PageAction {
   sensitivity: "internal" | "confidential";
   reversible: boolean;
   blockedBecause?: string;
-  page: { host: string; title: string };
+  /**
+   * The site the click was on. In an embedded frame (a checkout or a share dialog from another
+   * site), embeddedIn is the site of the page that embeds it.
+   */
+  page: { host: string; title: string; embeddedIn?: string };
 }
+
+export type ToastKind = "checking" | "waiting" | "allowed" | "blocked";
 
 /** What Edge Guard decided, in words a person can read. */
 export interface GuardResult {
@@ -28,6 +34,8 @@ export interface GuardResult {
 export interface Pending {
   id: string;
   tabId: number;
+  /** The frame the click was in, so only it replays the click. 0 is the top page. */
+  frameId: number;
   windowId?: number;
   action: PageAction;
   result: GuardResult;
@@ -57,13 +65,17 @@ export interface ScanReport {
 export type ToBackground =
   | { type: "guard-action"; action: PageAction }
   | { type: "scan"; findings: Finding[]; candidates: TextBlock[] }
-  | { type: "record"; item: HistoryItem };
+  | { type: "record"; item: HistoryItem }
+  | { type: "toast"; kind: ToastKind; text: string };
 
 export type GuardResponse =
   | { status: "allow"; result: GuardResult }
   | { status: "pending"; id: string; result: GuardResult };
 
-export type ToContent = { type: "decision"; id: string; allow: boolean } | { type: "scan-now" };
+export type ToContent =
+  | { type: "decision"; id: string; allow: boolean }
+  | { type: "scan-now" }
+  | { type: "toast"; kind: ToastKind; text: string };
 
 export const HISTORY_KEY = "history";
 export const ENABLED_KEY = "enabled";
@@ -76,7 +88,7 @@ export const MAX_HISTORY = 50;
  * name every page-derived field that toProposal in guard.ts puts in the proposal; a test
  * checks this.
  */
-export const CLOUD_SEES = "the button's label, the site and the page title";
+export const CLOUD_SEES = "the button's label, the site names and the page title";
 
 /**
  * Whether this build can reach the cloud at all. The public download has no App Check debug
