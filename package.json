@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:extension": "vite build -c vite.extension.config.ts && EXTENSION_PART=content vite build -c vite.extension.config.ts",
+    "zip:extension": "npm run build:extension && cd extension/dist && zip -qr ../edge-guard-extension.zip . && echo extension/edge-guard-extension.zip"
   },
   "dependencies": {
     "firebase": "^13.0.0",
@@ -18,6 +20,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "@types/chrome": "^0.0.287",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

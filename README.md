@@ -41,6 +41,10 @@ sensitive ones to a person.
 - **Policy** (`#/policy`): edit a draft of the rules and see at once whether it would
   let through anything the evals say it should not. Publishing happens outside the app.
 - **Single action** (`#/inspector`): evaluate one action you describe, outside the console.
+- **Chrome extension** (`extension/`): the same guard for anyone whose AI agent browses for
+  them. It pauses payments, messages, deletions and sharing, and warns about hidden
+  instructions aimed at AI. Try it on the demo page,
+  <https://edge-guard-f1314.web.app/agent-demo/>. See Chrome extension below.
 
 ## Architecture
 
@@ -79,6 +83,8 @@ flowchart LR
 | `src/ops/signing.ts`, `verifyLogged.ts` | ECDSA P-256 signing and receipt verification |
 | `src/ops/receiptLog.ts` | Firestore writes and reads |
 | `src/ui/`, `src/verify/` | Views and components only |
+| `extension/` | The Chrome extension: content script, service worker, approval window, popup |
+| `android/` | The approver phone app (Kotlin) |
 
 The guard, policy and executor do not import anything from the UI.
 
@@ -497,6 +503,34 @@ request appears on the phone. Whichever answers first, the phone or the console,
 Build and install instructions are in [android/README.md](android/README.md). Tested on a
 Samsung Galaxy A13, which has no Gemini Nano, so explanations there come from the cloud
 or, for sensitive calls, from the rules.
+
+## Chrome extension
+
+`extension/` turns Edge Guard outward, from a company's agent to anyone whose AI agent
+clicks, types and buys in their own browser. Details, privacy and install steps are in
+[extension/README.md](extension/README.md).
+
+- **Hidden instructions aimed at AI.** Text a person cannot see (invisible, tiny, the same
+  colour as the background, off the screen, an HTML comment) and worded as an instruction
+  to an AI is flagged by rule. Doubtful passages go to Gemini Nano with
+  `InferenceMode.ONLY_ON_DEVICE`: page content never leaves the computer.
+- **Risky clicks wait.** Payments, messages, deletions, sharing changes and passwords sent
+  to another site are paused and run through the same `guardAction` and policy as the web
+  app: rules, then Gemini Nano (`PREFER_ON_DEVICE`), with a cloud second opinion before an
+  allow on non-sensitive actions. What a model sees is the button label, the action type,
+  the site and the page title, never page text or form input.
+- **The approval opens outside the page,** in its own window, so neither the page nor an
+  agent driving it can press Allow.
+- **Firebase AI Logic in an extension.** reCAPTCHA cannot run there, so the extension uses
+  an App Check debug token, which the hackathon accepts. It is inside the build: builds go
+  to judges only and the token is revoked after judging. Without it, everything still works
+  on the device and anything only the cloud could check comes to the person.
+
+Tested end to end in Chromium with the unpacked extension on the demo page: all three
+hidden instructions found by rule, ordinary clicks untouched, the payment paused and
+allowed from the approval window, a deletion sent to the person when no model could run,
+and the password form blocked by rule. That machine had no Gemini Nano and no cloud token,
+so the on-device and cloud paths still need a run in Chrome with Nano.
 
 ## Offline
 

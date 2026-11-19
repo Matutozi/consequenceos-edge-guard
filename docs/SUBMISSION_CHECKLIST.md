@@ -11,6 +11,10 @@ status. Never put credentials, debug tokens, or private submission answers here.
 - [x] Create a separate public repository.
 - [x] Add a visible Apache 2.0 licence.
 - [x] Build a Web/Chrome interface.
+- [x] Chrome extension (`extension/`): hidden-instruction scan and pause-and-approve for risky clicks, on the shared guard.
+- [ ] Test the extension in Chrome with Gemini Nano ready: scan with an AI check, a message allowed after the cloud second opinion. **Owner action**
+- [ ] Create an App Check debug token for the extension, add it to `.env.local`, rebuild, zip. **Owner action**
+- [ ] Share the extension zip with judges (not in the public repo); revoke the token after judging.
 - [x] Call Firebase AI Logic from application code.
 - [x] Prefer Gemini Nano on-device with Firebase cloud fallback.
 - [x] Display the actual inference source.
@@ -70,7 +74,8 @@ Suggested timing:
 
 ## Devpost submission
 
-- [ ] Select **Web (Chrome)** as the platform.
+- [ ] Select **Web (Chrome)** and **Android** as platforms: the Android approver app calls Firebase AI Logic in hybrid mode itself (multi-platform gets strong consideration for the Grand Prize).
+- [ ] Describe the Chrome extension as part of the product, with the demo page link.
 - [ ] Add the public GitHub repository URL.
 - [ ] Add the hosted application URL.
 - [ ] Add the public YouTube demo URL.

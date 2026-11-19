@@ -15,3 +15,7 @@ android/app/build/
 android/local.properties
 android/.kotlin/
 *.apk
+
+# Chrome extension builds: they contain the App Check debug token
+extension/dist
+extension/*.zip

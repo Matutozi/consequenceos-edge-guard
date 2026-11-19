@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edge Guard</title>
+    <link rel="stylesheet" href="./ui.css" />
+    <style>
+      body { width: 380px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="row">
+        <h1><img src="/icons/icon-48.png" width="22" height="22" alt="" /> Edge Guard</h1>
+        <label class="switch"><input type="checkbox" id="enabled" /> <span id="enabled-label">On</span></label>
+      </div>
+      <p class="muted">
+        Pauses payments, messages, deletions and sharing until they are checked, and warns about
+        hidden instructions aimed at AI agents. Page content never leaves this computer.
+      </p>
+
+      <section>
+        <h2>On-device AI</h2>
+        <div class="box" id="ai"></div>
+      </section>
+
+      <section>
+        <h2>This page</h2>
+        <div class="box" id="page">Not scanned yet.</div>
+      </section>
+
+      <section>
+        <h2>Recent decisions</h2>
+        <ul class="list" id="history"></ul>
+      </section>
+    </main>
+    <script type="module" src="./src/popup.ts"></script>
+  </body>
+</html>
