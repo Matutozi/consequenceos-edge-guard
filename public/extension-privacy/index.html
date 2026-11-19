@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Edge Guard extension: privacy policy</title>
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="./privacy.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Edge Guard for AI browser agents: privacy policy</h1>
+      <p class="muted">Last updated 19 November 2026. Applies to the Chrome extension "Edge Guard for AI browser agents".</p>
+
+      <h2>In short</h2>
+      <p>
+        Edge Guard reads web pages on your computer to pause risky actions and to find hidden
+        instructions aimed at AI. Page content never leaves your computer. To judge a message or a
+        deletion, it may send a short description of that one click to Google's Gemini. It does not
+        sell, share or keep your data anywhere else.
+      </p>
+
+      <h2>What Edge Guard reads, on your computer</h2>
+      <ul>
+        <li>The text of the pages you visit, to find hidden instructions aimed at AI agents. This is checked by rules and, when your computer supports it, by Gemini Nano, an AI model that runs on your computer. It is never sent anywhere.</li>
+        <li>The label of a button you or an AI agent clicks (for example "Pay $1,240"), the website's name and the page title, when the click is a payment, message, deletion, sharing change or password submission.</li>
+        <li>Whether a form has a card-number field, and whether a password field has been filled in. Edge Guard never reads the card number, the password or anything else typed into a form.</li>
+      </ul>
+
+      <h2>What may leave your computer</h2>
+      <p>
+        Only for messages and deletions, and only when the on-device AI is unavailable or to
+        double-check its decision to let one through, Edge Guard sends this to Google's Gemini through
+        Google Firebase: the button's label, the type of action, the website's name and the page title.
+        Nothing else. Payments, sharing changes, passwords and page content are never sent.
+        Google processes that request under the
+        <a href="https://policies.google.com/privacy">Google Privacy Policy</a> and the
+        <a href="https://ai.google.dev/gemini-api/terms">Gemini API terms</a>.
+      </p>
+
+      <h2>What Edge Guard stores</h2>
+      <ul>
+        <li>On your computer only: whether Edge Guard is on, your last 50 decisions (site, button label, allowed or blocked, and why), and the scan result of each open tab until you close it.</li>
+        <li>You can clear all of it by removing the extension.</li>
+      </ul>
+
+      <h2>What Edge Guard does not do</h2>
+      <ul>
+        <li>It does not sell or share your data, show ads, or track you across sites.</li>
+        <li>It does not use your data for anything other than pausing risky actions and warning about hidden instructions.</li>
+        <li>It does not create an account or know who you are.</li>
+      </ul>
+
+      <h2>Contact</h2>
+      <p>
+        Questions or concerns: open an issue at
+        <a href="https://github.com/Matutozi/consequenceos-edge-guard/issues">github.com/Matutozi/consequenceos-edge-guard</a>.
+      </p>
+    </main>
+  </body>
+</html>

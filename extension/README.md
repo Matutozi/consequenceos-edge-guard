@@ -39,6 +39,11 @@ rules first, then the assessor through Firebase AI Logic, then the same determin
 
 ## Install (judges and testers)
 
+**From the Chrome Web Store (unlisted):** the link will be in the submission once the
+store's review is done. One click on **Add to Chrome**.
+
+**Until then, from the zip:**
+
 1. Download `edge-guard-extension.zip` from the link in the submission and unzip it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the
    unzipped folder.

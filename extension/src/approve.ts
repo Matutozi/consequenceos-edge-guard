@@ -50,7 +50,9 @@ async function render(): Promise<void> {
     el(
       "div",
       { className: blocked ? "box deny" : "box review" },
-      el("p", { text: `Edge Guard ${blocked ? "stopped" : "paused"} ${pending.action.words} on ${pending.action.page.host}.` }),
+      el("p", {
+        text: `Edge Guard ${blocked ? "stopped" : "paused"} ${pending.action.words} ${pending.action.category === "credentials" ? "from" : "on"} ${pending.action.page.host}.`,
+      }),
     ),
     el(
       "dl",

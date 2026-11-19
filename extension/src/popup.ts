@@ -68,7 +68,9 @@ async function renderAi(): Promise<void> {
 
 async function renderPage(): Promise<void> {
   const box = $("page");
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  // `?tab=` shows another tab's results when the popup is opened as a page (store screenshots).
+  const forced = Number(new URLSearchParams(location.search).get("tab"));
+  const [tab] = forced ? [{ id: forced }] : await chrome.tabs.query({ active: true, currentWindow: true });
   if (tab?.id === undefined) return;
   const tabId = tab.id;
   const { [scanKey(tabId)]: report } = (await chrome.storage.session.get(scanKey(tabId))) as Record<string, ScanReport | undefined>;
