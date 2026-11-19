@@ -13,7 +13,7 @@ status. Never put credentials, debug tokens, or private submission answers here.
 - [x] Build a Web/Chrome interface.
 - [x] Chrome extension (`extension/`): hidden-instruction scan and pause-and-approve for risky clicks, on the shared guard.
 - [ ] Test the extension in Chrome with Gemini Nano ready: scan with an AI check, a message allowed after the cloud second opinion. **Owner action**
-- [ ] Create an App Check debug token for the extension, add it to `.env.local`, rebuild, zip. **Owner action**
+- [x] Create an App Check debug token for the extension (`chrome-extension-judging`, created with the Firebase CLI), add it to `.env.local`, rebuild, zip.
 - [x] Download page for the extension: https://edge-guard-f1314.web.app/extension/ (zip not in the repo; `npm run release:extension`, then deploy hosting).
 - [ ] Revoke the `chrome-extension-judging` App Check debug token after judging.
 - [x] Call Firebase AI Logic from application code.
@@ -39,8 +39,8 @@ status. Never put credentials, debug tokens, or private submission answers here.
 - [x] Keep final enforcement deterministic rather than model-controlled.
 - [ ] Test keyboard and mobile layouts in a real browser.
 - [ ] Run `npm test`, `npm run lint`, and `npm run build` before every demo recording.
-- [ ] Verify no secrets or App Check debug tokens are present in Git history.
-- [ ] Review dependency audit output and resolve material findings.
+- [x] Verify no secrets or App Check debug tokens are present in Git history. (19 Nov: no `.env` file ever committed, the extension token is not in history, the only UUID is a test fixture.)
+- [x] Review dependency audit output and resolve material findings. (19 Nov: none material. `firebase` is flagged through `@grpc/grpc-js`, which only Node.js uses; it is not in the web or extension bundles, and the suggested fix is a downgrade to firebase 9. The critical findings are in Vitest, a test-only tool.)
 
 ## Deployment
 
