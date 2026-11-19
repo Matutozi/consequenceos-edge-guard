@@ -9,7 +9,7 @@ import {
   type ToBackground,
   type ToContent,
 } from "./messages";
-import { fieldsAround, findControl, isLink, labelsOf, looksLikeMoney } from "./target";
+import { changesBetween, fieldsAround, findControl, formState, isLink, labelsOf, looksLikeMoney } from "./target";
 
 /**
  * Runs in every page and every frame in it (a checkout or a share dialog is often an
@@ -37,9 +37,48 @@ const alive = () => !!chrome.runtime?.id;
 const CARD_FIELDS =
   'input[autocomplete~="cc-number"], input[name*="cardnumber" i], input[name*="card_number" i], input[name*="ccnum" i], input[id*="cardnumber" i], input[id*="card-number" i]';
 
-/** Elements and forms allowed once, so the replayed click or submit passes through. */
-const passes = new WeakSet<Element>();
-const pendingReplays = new Map<string, () => void>();
+/**
+ * Sends a paused click or submission once it is allowed. Returns why it was not sent, or
+ * undefined when it was: the page may have changed while the person was deciding.
+ */
+type Replay = () => string | undefined;
+const pendingReplays = new Map<string, { replay: Replay; action: PageAction; result: GuardResponse["result"] }>();
+
+/**
+ * The click or submission being replayed right now. Set only while the replay runs: a click
+ * fires its submit event synchronously, so both are let through, and nothing is left over to
+ * let a later click or Enter through unchecked.
+ */
+let replaying: { control?: Element; form?: HTMLFormElement } | undefined;
+
+function replayNow(run: () => void, control?: Element, form?: HTMLFormElement | null): void {
+  replaying = { control, form: form ?? undefined };
+  try {
+    run();
+  } finally {
+    replaying = undefined;
+  }
+}
+
+const quoted = (names: string[]) => {
+  const shown = names.slice(0, 3).map((n) => `“${n.length > 40 ? `${n.slice(0, 39)}…` : n}”`);
+  const more = names.length > 3 ? ` and ${names.length - 3} more` : "";
+  return shown.length === 1 ? `${shown[0]}${more}` : `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}${more}`;
+};
+
+/**
+ * The check before a replay: the form must still send what it would have sent when it was
+ * paused. An approval is for that, not for whatever the page or an agent typed in meanwhile.
+ */
+function unchangedSince(before: ReturnType<typeof formState>, control: Element | null, form: HTMLFormElement | null): string | undefined {
+  if ((control && !control.isConnected) || (form && !form.isConnected)) {
+    return "the page changed while you were deciding, and the button is gone. Check the page and try again.";
+  }
+  const changed = changesBetween(before, formState(control, form));
+  return changed.length > 0
+    ? `${quoted(changed)} changed while you were deciding. Check the form and try again.`
+    : undefined;
+}
 
 const MAX_SHOWN_LABEL = 120;
 const shorten = (text: string) => (text.length > MAX_SHOWN_LABEL ? `${text.slice(0, MAX_SHOWN_LABEL - 1)}…` : text);
@@ -67,7 +106,13 @@ function signalsFor(el: Element | null, form: HTMLFormElement | null, control: E
   const { label, otherLabels } = control ? labelsOf(control) : { label: "", otherLabels: [] };
   let formActionHost: string | undefined;
   try {
-    formActionHost = form?.getAttribute("action") ? new URL(form.action).host : undefined;
+    // A submit button's formaction overrides the form's action.
+    const override = control?.getAttribute("formaction");
+    formActionHost = override
+      ? new URL(override, location.href).host
+      : form?.getAttribute("action")
+        ? new URL(form.action).host
+        : undefined;
   } catch {
     formActionHost = undefined;
   }
@@ -106,7 +151,31 @@ function pageAction(signals: ActionSignals): PageAction | undefined {
   };
 }
 
-async function check(action: PageAction, replay: () => void): Promise<void> {
+/** Sends an allowed action, or says why it was not sent and records that in the history. */
+function send(replay: Replay, action: PageAction, result: GuardResponse["result"], allowedText: string): void {
+  const notSent = replay();
+  if (!notSent) {
+    toast("allowed", allowedText);
+    return;
+  }
+  toast("blocked", `Not sent: ${notSent}`);
+  const record: ToBackground = {
+    type: "record",
+    item: {
+      at: new Date().toISOString(),
+      site: action.page.host,
+      label: action.label,
+      words: action.words,
+      outcome: "blocked",
+      by: "Edge Guard, after it was allowed: the page changed before it was sent",
+      explanation: notSent,
+      digest: result.digest,
+    },
+  };
+  chrome.runtime.sendMessage(record).catch(() => undefined);
+}
+
+async function check(action: PageAction, replay: Replay): Promise<void> {
   toast("checking", `Edge Guard is checking: ${action.words}.`);
   let response: GuardResponse | { error: string };
   try {
@@ -119,11 +188,11 @@ async function check(action: PageAction, replay: () => void): Promise<void> {
     return;
   }
   if (response.status === "allow") {
-    toast("allowed", `Allowed. ${response.result.explanation}`);
-    replay();
+    // The check took a moment, a model's answer several seconds: the form is compared here too.
+    send(replay, action, response.result, `Allowed. ${response.result.explanation}`);
     return;
   }
-  pendingReplays.set(response.id, replay);
+  pendingReplays.set(response.id, { replay, action, result: response.result });
   toast(
     response.result.decision === "deny" ? "blocked" : "waiting",
     response.result.decision === "deny"
@@ -136,20 +205,18 @@ function onClick(event: MouseEvent): void {
   if (!enabled || !alive()) return;
   // Through shadow roots too: open ones by the composed path, closed ones by asking Chrome.
   const el = findControl(event, (host) => chrome.dom?.openOrClosedShadowRoot(host));
-  if (!el) return;
-  if (passes.has(el)) {
-    passes.delete(el);
-    return;
-  }
+  if (!el || replaying?.control === el) return;
   const form = (el as HTMLButtonElement).form ?? el.closest("form");
   const action = pageAction(signalsFor(el, form, el));
   if (!action) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  const before = formState(el, form);
   void check(action, () => {
-    passes.add(el);
-    if (form && isSubmitControl(el)) passes.add(form);
-    (el as HTMLElement).click();
+    const notSent = unchangedSince(before, el, form);
+    if (notSent) return notSent;
+    replayNow(() => (el as HTMLElement).click(), el, form && isSubmitControl(el) ? form : null);
+    return undefined;
   });
 }
 
@@ -157,18 +224,19 @@ function onClick(event: MouseEvent): void {
 function onSubmit(event: SubmitEvent): void {
   if (!enabled || !alive()) return;
   const form = event.target as HTMLFormElement;
-  if (passes.has(form)) {
-    passes.delete(form);
-    return;
-  }
+  if (replaying?.form === form) return;
   const submitter = event.submitter;
   const action = pageAction(signalsFor(null, form, submitter));
   if (!action) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  const before = formState(submitter, form);
   void check(action, () => {
-    passes.add(form);
-    form.requestSubmit(submitter ?? undefined);
+    const notSent = unchangedSince(before, submitter, form);
+    if (notSent) return notSent;
+    if (submitter && (submitter as HTMLButtonElement | HTMLInputElement).form !== form) return "the button moved out of the form while you were deciding. Try again.";
+    replayNow(() => form.requestSubmit(submitter ?? undefined), undefined, form);
+    return undefined;
   });
 }
 
@@ -177,12 +245,11 @@ window.addEventListener("submit", onSubmit, true);
 
 chrome.runtime.onMessage.addListener((message: ToContent) => {
   if (message.type === "decision") {
-    const replay = pendingReplays.get(message.id);
+    const pending = pendingReplays.get(message.id);
     pendingReplays.delete(message.id);
-    if (!replay) return;
+    if (!pending) return;
     if (message.allow) {
-      toast("allowed", "You allowed it.");
-      replay();
+      send(pending.replay, pending.action, pending.result, "You allowed it.");
     } else {
       toast("blocked", "Blocked. Nothing was sent.");
     }

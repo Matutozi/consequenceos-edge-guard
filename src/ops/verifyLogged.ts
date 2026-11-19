@@ -1,5 +1,5 @@
 import { canonicalJson, verifyReceipt } from "../domain/receipt";
-import { entryMessage, type ReceiptDoc, type RunDoc } from "./receiptLog";
+import { entryMessage, MAX_ENTRIES_READ, type LogEntries, type ReceiptDoc, type RunDoc } from "./receiptLog";
 import { verifyWithPublicKey } from "./signing";
 import { fingerprint, formatFingerprint, type ApproverDoc } from "./approvals";
 import { approvalMessage, receiptMessage } from "./toolGuard";
@@ -7,7 +7,7 @@ import { approvalMessage, receiptMessage } from "./toolGuard";
 export type CheckStatus = "pass" | "fail" | "not-applicable";
 
 export interface Check {
-  id: "origin" | "log-copy" | "digest" | "signature" | "binding" | "approval" | "outcome" | "entry" | "unique";
+  id: "origin" | "log-copy" | "digest" | "signature" | "binding" | "approval" | "outcome" | "entry" | "unique" | "complete";
   label: string;
   status: CheckStatus;
   detail: string;
@@ -24,12 +24,15 @@ export interface Check {
 /**
  * @param rivalRuns other runs whose own, validly signed entries claim this receipt ID.
  *   Normally empty; anything else means one of them is a copy.
+ * @param logComplete false when more entries claim this receipt ID than Verify reads, so a
+ *   rival could be among the unread ones.
  */
 export async function checkLoggedReceipt(
   doc: ReceiptDoc,
   run: RunDoc | undefined,
   approver?: ApproverDoc,
   rivalRuns: string[] = [],
+  logComplete = true,
 ): Promise<Check[]> {
   const { receipt } = doc;
   const checks: Check[] = [];
@@ -149,6 +152,18 @@ export async function checkLoggedReceipt(
           : "The outcome or approval does not match what the run's key signed: this entry was written or changed by someone else.",
   });
 
+  if (!logComplete) {
+    checks.push({
+      id: "complete",
+      label: "Every entry for this receipt was checked",
+      status: "fail",
+      detail:
+        `More than ${MAX_ENTRIES_READ} entries in the audit log claim this receipt ID, more than Verify reads. ` +
+        "Anyone can append entries, so someone may be flooding the log to hide a conflicting copy among them. " +
+        "This receipt cannot be verified from the log until they are cleared.",
+    });
+  }
+
   if (rivalRuns.length > 0) {
     checks.push({
       id: "unique",
@@ -172,6 +187,8 @@ export interface ResolvedEntry {
   rivalRuns: string[];
   /** Entries for this ID that failed verification and were set aside. */
   ignored: number;
+  /** False when more entries claim this ID than were read (see checkLoggedReceipt). */
+  complete: boolean;
 }
 
 /**
@@ -181,9 +198,10 @@ export interface ResolvedEntry {
  * its failing checks can be shown.
  */
 export async function resolveLogEntry(
-  entries: ReceiptDoc[],
+  found: ReceiptDoc[] | LogEntries<ReceiptDoc>,
   lookup: Pick<AuditLookup, "run" | "approver">,
 ): Promise<ResolvedEntry | undefined> {
+  const { entries, complete } = Array.isArray(found) ? { entries: found, complete: true } : found;
   if (entries.length === 0) return undefined;
   const runs = new Map<string, Promise<RunDoc | undefined>>();
   const runOf = (id: string) => {
@@ -207,6 +225,7 @@ export async function resolveLogEntry(
     approver: chosen.approver,
     rivalRuns,
     ignored: checked.length - authentic.length - (chosen.ok ? 0 : 1),
+    complete,
   };
 }
 
@@ -224,8 +243,11 @@ export interface AuditLookup {
   run(runId: string): Promise<RunDoc | undefined>;
   /** A phone's registered key, for approvals signed on a phone. Optional. */
   approver?(keyId: string): Promise<ApproverDoc | undefined>;
-  /** Every log entry for this receipt ID; the authentic one is picked with resolveLogEntry. */
-  receipt(id: string): Promise<ReceiptDoc[]>;
+  /**
+   * Every log entry for this receipt ID; the authentic one is picked with resolveLogEntry.
+   * A plain list counts as complete.
+   */
+  receipt(id: string): Promise<ReceiptDoc[] | LogEntries<ReceiptDoc>>;
 }
 
 const sameKey = (a: JsonWebKey, b: JsonWebKey) => a.kty === b.kty && a.crv === b.crv && a.x === b.x && a.y === b.y;
@@ -280,11 +302,14 @@ export async function checkPastedReceipt(text: string, lookup: AuditLookup): Pro
 
   let loggedRun: RunDoc | undefined;
   let loggedCopy: ReceiptDoc | undefined;
+  let logComplete = true;
   let lookupError = "";
   try {
     const [run, entries] = await Promise.all([lookup.run(doc.runId), lookup.receipt(doc.receipt.id)]);
     loggedRun = run;
-    loggedCopy = (await resolveLogEntry(entries, lookup))?.doc;
+    const resolved = await resolveLogEntry(entries, lookup);
+    loggedCopy = resolved?.doc;
+    logComplete = resolved?.complete ?? true;
   } catch (caught) {
     lookupError = caught instanceof Error ? caught.message : "The audit log could not be read.";
   }
@@ -315,6 +340,12 @@ export async function checkPastedReceipt(text: string, lookup: AuditLookup): Pro
 
   const key = loggedRun?.publicKey ?? fileKey;
   const approver = doc.approval?.keyId && lookup.approver ? await lookup.approver(doc.approval.keyId).catch(() => undefined) : undefined;
-  const checks = await checkLoggedReceipt(doc, key ? { agent: "", planner: "live", publicKey: key } : undefined, approver);
+  const checks = await checkLoggedReceipt(
+    doc,
+    key ? { agent: "", planner: "live", publicKey: key } : undefined,
+    approver,
+    [],
+    logComplete,
+  );
   return { kind: "signed", receipt: doc.receipt, checks: [origin, logCopy, ...checks] };
 }

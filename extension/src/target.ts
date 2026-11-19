@@ -104,3 +104,94 @@ function describe(field: Element): string {
 }
 
 export const looksLikeMoney = (fields: Element[]) => fields.some((field) => MONEY_FIELD.test(describe(field)));
+
+/**
+ * What a form will send, taken when a click is paused and again just before it is replayed,
+ * so a form changed while the person was deciding (another amount, another payee, another
+ * address to send it to) is not sent on an approval given for the old one. Held in the
+ * content script's memory for that comparison only; never stored, logged or sent.
+ */
+export interface FormState {
+  /** Where the form sends its data, and how. */
+  target: string;
+  /** One entry per field: a key, a name a person can read, and what the field would send. */
+  fields: { key: string; name: string; value: string }[];
+}
+
+function fieldValue(field: Element): string {
+  if (field instanceof HTMLInputElement) {
+    if (field.type === "checkbox" || field.type === "radio") return field.checked ? `checked:${field.value}` : "unchecked";
+    if (field.type === "file") return [...(field.files ?? [])].map((f) => `${f.name}:${f.size}`).join("|");
+    return field.value;
+  }
+  if (field instanceof HTMLSelectElement) return [...field.selectedOptions].map((o) => o.value).join("|");
+  if (field instanceof HTMLTextAreaElement) return field.value;
+  return "";
+}
+
+function readableName(field: Element): string {
+  const id = field.getAttribute("id");
+  const root = field.getRootNode() as Document | ShadowRoot;
+  const forLabel = id ? [...(root.querySelectorAll?.("label") ?? [])].find((label) => label.htmlFor === id)?.textContent : "";
+  return (
+    clean(forLabel) ||
+    clean(field.closest("label")?.textContent) ||
+    clean(field.getAttribute("aria-label")) ||
+    clean(field.getAttribute("placeholder")) ||
+    field.getAttribute("name") ||
+    id ||
+    "a field"
+  );
+}
+
+/** Every field, hidden ones included: a hidden "amount" or "to" field is still sent. */
+const ALL_FIELDS = "input:not([type=submit]):not([type=button]):not([type=image]):not([type=reset]), select, textarea";
+
+export function formState(control: Element | null, form: HTMLFormElement | null): FormState {
+  const fields = form
+    ? [...form.elements].filter((f) => f.matches(ALL_FIELDS))
+    : control
+      ? containerFields(control)
+      : [];
+  const seen = new Map<string, number>();
+  return {
+    // A submit button's formaction and formmethod override the form's own.
+    target: form
+      ? [form.method || "get", form.action, control?.getAttribute("formaction") ?? "", control?.getAttribute("formmethod") ?? ""].join(" ")
+      : "no form",
+    fields: fields.map((field) => {
+      const base = `${field.tagName}:${field.getAttribute("name") ?? ""}:${field.getAttribute("id") ?? ""}`;
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      return { key: `${base}#${n}`, name: readableName(field), value: fieldValue(field) };
+    }),
+  };
+}
+
+/** The fields of the nearest container with any field, hidden ones included, for apps with no <form>. */
+function containerFields(control: Element): Element[] {
+  let node = control.parentElement;
+  for (let level = 0; node && level < MAX_LEVELS_UP; level++, node = node.parentElement) {
+    if (node.querySelector(FIELDS)) return [...node.querySelectorAll(ALL_FIELDS)];
+  }
+  return [];
+}
+
+/**
+ * What changed between two snapshots, in words: the readable names of the fields that were
+ * changed, added or removed, and "where the form sends it" when its target changed.
+ * Empty when nothing changed.
+ */
+export function changesBetween(before: FormState, after: FormState): string[] {
+  const changes: string[] = [];
+  if (before.target !== after.target) changes.push("where the form sends it");
+  const old = new Map(before.fields.map((f) => [f.key, f]));
+  const now = new Map(after.fields.map((f) => [f.key, f]));
+  for (const [key, field] of now) {
+    if (old.get(key)?.value !== field.value) changes.push(field.name);
+  }
+  for (const [key, field] of old) {
+    if (!now.has(key)) changes.push(field.name);
+  }
+  return [...new Set(changes)];
+}

@@ -1,3 +1,4 @@
+import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { canonicalJson } from "../domain/receipt";
 import type { Signer } from "./signing";
 import type { Approval, SignedReceipt } from "./toolGuard";
@@ -69,6 +70,39 @@ export async function signedReceiptDoc(
   return { ...doc, outcomeSignature: await signer.sign(entryMessage(doc)) };
 }
 
+/** Entries read per query, and the most read for one receipt ID before Verify gives up. */
+export const ENTRY_PAGE_SIZE = 100;
+export const MAX_ENTRIES_READ = 1000;
+
+/** Every log entry for a receipt ID, and whether that is all of them. */
+export interface LogEntries<T = LoggedReceipt> {
+  entries: T[];
+  /** False when more entries claim this ID than Verify reads: someone is flooding the log. */
+  complete: boolean;
+}
+
+/**
+ * Reads page after page until a short page says there are no more, or `max` items are read.
+ * Anyone can append entries for a receipt ID, under document IDs they choose, so a fixed
+ * first page can be filled with junk that sorts before the genuine entry: every entry has to
+ * be read. Past `max`, the result says it is incomplete instead of pretending to be whole.
+ */
+export async function readAllPages<T, C>(
+  fetchPage: (after: C | undefined) => Promise<{ items: T[]; cursor?: C }>,
+  pageSize = ENTRY_PAGE_SIZE,
+  max = MAX_ENTRIES_READ,
+): Promise<{ items: T[]; complete: boolean }> {
+  const items: T[] = [];
+  let after: C | undefined;
+  while (items.length < max) {
+    const { items: page, cursor } = await fetchPage(after);
+    items.push(...page);
+    if (page.length < pageSize || cursor === undefined) return { items, complete: true };
+    after = cursor;
+  }
+  return { items: items.slice(0, max), complete: false };
+}
+
 /** Firestore retries forever when the database is missing or offline; give up visibly instead. */
 export const WRITE_TIMEOUT_MS = 10_000;
 
@@ -119,21 +153,34 @@ export const receiptLog = {
   },
 
   /**
-   * Every entry the log holds for this receipt ID, oldest first. Anyone can append, so
-   * the caller must pick the authentic one (resolveLogEntry). Includes an entry stored
-   * under the receipt's own ID, as entries were before they were signed.
+   * Every entry the log holds for this receipt ID, oldest first, up to MAX_ENTRIES_READ.
+   * Anyone can append, so the caller must pick the authentic one (resolveLogEntry). Pages
+   * in document-ID order, which needs no composite index. Includes an entry stored under
+   * the receipt's own ID, as entries were before they were signed.
    */
-  async getEntries(id: string): Promise<LoggedReceipt[]> {
+  async getEntries(id: string): Promise<LogEntries> {
     const { db, fs } = await firestore();
-    const [legacy, entries] = await Promise.all([
+    const byId = fs.where("receipt.id", "==", id);
+    const [legacy, found] = await Promise.all([
       withTimeout(fs.getDoc(fs.doc(db, RECEIPTS, id))),
-      withTimeout(fs.getDocs(fs.query(fs.collection(db, RECEIPTS), fs.where("receipt.id", "==", id), fs.limit(20)))),
+      readAllPages<QueryDocumentSnapshot, QueryDocumentSnapshot>(async (after) => {
+        const page = fs.query(
+          fs.collection(db, RECEIPTS),
+          byId,
+          fs.orderBy(fs.documentId()),
+          ...(after ? [fs.startAfter(after)] : []),
+          fs.limit(ENTRY_PAGE_SIZE),
+        );
+        const snap = await withTimeout(fs.getDocs(page));
+        return { items: snap.docs, cursor: snap.docs.at(-1) };
+      }),
     ]);
-    const all = entries.docs.map((d) => ({ docId: d.id, data: d.data() }));
+    const all = found.items.map((d) => ({ docId: d.id, data: d.data() }));
     if (legacy.exists() && !all.some((e) => e.docId === legacy.id)) all.push({ docId: legacy.id, data: legacy.data() });
-    return all
-      .map((e) => fromSnapshot(e.data))
-      .sort((a, b) => (a.loggedAt ?? "").localeCompare(b.loggedAt ?? ""));
+    return {
+      entries: all.map((e) => fromSnapshot(e.data)).sort((a, b) => (a.loggedAt ?? "").localeCompare(b.loggedAt ?? "")),
+      complete: found.complete,
+    };
   },
 
   async getRun(runId: string): Promise<RunDoc | undefined> {

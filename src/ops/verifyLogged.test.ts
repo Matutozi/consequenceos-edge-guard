@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDecisionReceipt } from "../domain/receipt";
 import type { PolicyDecision } from "../domain/types";
-import { signedReceiptDoc, toReceiptDoc, type ReceiptDoc, type RunDoc, type StepOutcome } from "./receiptLog";
+import { MAX_ENTRIES_READ, readAllPages, signedReceiptDoc, toReceiptDoc, type ReceiptDoc, type RunDoc, type StepOutcome } from "./receiptLog";
 import { createSigner } from "./signing";
 import { approveReceipt, receiptMessage } from "./toolGuard";
 import { allPassed, checkLoggedReceipt, checkPastedReceipt, resolveLogEntry } from "./verifyLogged";
@@ -158,6 +158,79 @@ describe("signed log entries", () => {
     const resolved = await resolveLogEntry([{ ...doc, outcomeSignature: undefined }], { run: async () => run });
     expect(resolved?.ignored).toBe(0);
     expect(await resolveLogEntry([], { run: async () => run })).toBeUndefined();
+  });
+});
+
+describe("reading every entry for a receipt ID", () => {
+  /**
+   * The log as Firestore pages it: by document ID. Anyone can append entries for a known
+   * receipt ID under IDs they choose, so junk can sort before the genuine entry.
+   */
+  function collection(docs: { id: string; doc: ReceiptDoc }[]) {
+    const sorted = [...docs].sort((a, b) => a.id.localeCompare(b.id));
+    let reads = 0;
+    const fetchPage = async (after: string | undefined, pageSize = 100) => {
+      reads++;
+      const start = after === undefined ? 0 : sorted.findIndex((d) => d.id === after) + 1;
+      const page = sorted.slice(start, start + pageSize);
+      return { items: page, cursor: page.at(-1)?.id };
+    };
+    return { fetchPage, reads: () => reads };
+  }
+
+  async function flooded(junkCount: number) {
+    const { doc, run } = await logged("require_approval", "executed", true);
+    const junk: ReceiptDoc = { ...doc, approval: null, outcome: "rejected", outcomeSignature: undefined };
+    const docs = [
+      ...Array.from({ length: junkCount }, (_, i) => ({ id: `0000${String(i).padStart(16, "0")}`, doc: junk })),
+      { id: "Zq9GenuineRandomId01", doc },
+    ];
+    return { doc, run, ...collection(docs) };
+  }
+
+  it("finds the genuine entry behind junk that sorts first, which the old 20-entry read missed", async () => {
+    const { doc, run, fetchPage } = await flooded(150);
+    expect((await fetchPage(undefined, 20)).items.some((d) => d.doc === doc)).toBe(false); // the old read
+    const { items, complete } = await readAllPages(fetchPage);
+    expect(complete).toBe(true);
+    expect(items).toHaveLength(151);
+    const resolved = await resolveLogEntry({ entries: items.map((d) => d.doc), complete }, { run: async () => run });
+    expect(resolved?.doc.outcome).toBe("executed");
+    expect(resolved?.ignored).toBe(150);
+    expect(allPassed(await checkLoggedReceipt(resolved!.doc, resolved!.run, undefined, resolved!.rivalRuns, resolved!.complete))).toBe(true);
+  });
+
+  it("stops at a full page boundary only when the next page is empty", async () => {
+    const { fetchPage, reads } = await flooded(199);
+    const { items, complete } = await readAllPages(fetchPage);
+    expect([items.length, complete, reads()]).toEqual([200, true, 3]);
+  });
+
+  it("says the log is incomplete, and fails verification, when it is flooded past what Verify reads", async () => {
+    const { fetchPage } = await flooded(MAX_ENTRIES_READ + 200);
+    const { items, complete } = await readAllPages(fetchPage);
+    expect(items).toHaveLength(MAX_ENTRIES_READ);
+    expect(complete).toBe(false);
+    // Even when the genuine entry is among those read, a rival could be among the rest.
+    const genuine = await logged("allow", "executed");
+    const lookup = { run: async () => genuine.run };
+    const whole = await resolveLogEntry({ entries: [genuine.doc], complete: true }, lookup);
+    expect(allPassed(await checkLoggedReceipt(whole!.doc, genuine.run, undefined, whole!.rivalRuns, whole!.complete))).toBe(true);
+    const resolved = await resolveLogEntry({ entries: [genuine.doc], complete }, lookup);
+    const checks = await checkLoggedReceipt(resolved!.doc, genuine.run, undefined, resolved!.rivalRuns, resolved!.complete);
+    expect(checks.filter((c) => c.status === "fail").map((c) => c.id)).toEqual(["complete"]);
+    expect(checks.find((c) => c.id === "complete")?.detail).toMatch(/flooding the log/);
+    expect(allPassed(checks)).toBe(false);
+  });
+
+  it("fails a pasted receipt the same way when its log entries are flooded", async () => {
+    const { doc, run } = await logged("deny", "refused");
+    const text = JSON.stringify({ ...doc, publicKey: run.publicKey });
+    const ok = await checkPastedReceipt(text, { run: async () => run, receipt: async () => ({ entries: [doc], complete: true }) });
+    expect(allPassed(ok.checks)).toBe(true);
+    const floodedResult = await checkPastedReceipt(text, { run: async () => run, receipt: async () => ({ entries: [doc], complete: false }) });
+    expect(floodedResult.checks.find((c) => c.id === "complete")?.status).toBe("fail");
+    expect(allPassed(floodedResult.checks)).toBe(false);
   });
 });
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { classifyAction } from "./classify";
-import { CONTROLS, fieldsAround, findControl, isLink, labelsOf, looksLikeMoney } from "./target";
+import { changesBetween, CONTROLS, fieldsAround, findControl, formState, isLink, labelsOf, looksLikeMoney } from "./target";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -136,5 +136,64 @@ describe("fieldsAround and looksLikeMoney", () => {
     const signals = { label, otherLabels, moneyFields: looksLikeMoney(fieldsAround(button, null)), pageHost: "bank.example" };
     expect(classifyAction(signals)?.category).toBe("payment");
     expect(classifyAction({ ...signals, moneyFields: false })).toBeUndefined();
+  });
+});
+
+describe("formState and changesBetween", () => {
+  const transfer = () => {
+    document.body.innerHTML = `
+      <form action="https://bank.example/transfer" method="post">
+        <label for="amt">Amount</label><input id="amt" name="amount" value="100">
+        <input name="iban" placeholder="IBAN" value="DE89 3704 0044 0532 0130 00">
+        <input type="hidden" name="to" value="savings">
+        <select name="speed"><option value="normal" selected>Normal</option><option value="instant">Instant</option></select>
+        <label><input type="checkbox" name="save" value="yes"> Save payee</label>
+        <button id="go">Confirm</button>
+      </form>`;
+    const button = document.getElementById("go") as HTMLButtonElement;
+    return { button, form: button.form!, state: () => formState(button, button.form) };
+  };
+
+  it("finds nothing when nothing changed", () => {
+    const { state } = transfer();
+    expect(changesBetween(state(), state())).toEqual([]);
+  });
+
+  it("names each changed field the way a person would read it", () => {
+    const { state, form } = transfer();
+    const before = state();
+    (form.elements.namedItem("amount") as HTMLInputElement).value = "9000";
+    (form.elements.namedItem("iban") as HTMLInputElement).value = "GB33 BUKB 2020 1555 5555 55";
+    (form.elements.namedItem("speed") as HTMLSelectElement).value = "instant";
+    (form.elements.namedItem("save") as HTMLInputElement).checked = true;
+    expect(changesBetween(before, state())).toEqual(["Amount", "IBAN", "speed", "Save payee"]);
+  });
+
+  it("catches a hidden field and a new field, which a person cannot see change", () => {
+    const { state, form } = transfer();
+    const before = state();
+    (form.elements.namedItem("to") as HTMLInputElement).value = "attacker";
+    const extra = document.createElement("input");
+    extra.name = "cc";
+    form.append(extra);
+    expect(changesBetween(before, state())).toEqual(["to", "cc"]);
+  });
+
+  it("catches a change to where the form sends it, including a button's formaction", () => {
+    const { state, form, button } = transfer();
+    const before = state();
+    form.action = "https://evil.example/collect";
+    expect(changesBetween(before, state())).toEqual(["where the form sends it"]);
+    form.action = "https://bank.example/transfer";
+    button.setAttribute("formaction", "https://evil.example/collect");
+    expect(changesBetween(before, state())).toEqual(["where the form sends it"]);
+  });
+
+  it("covers apps with no <form>, by the fields around the button", () => {
+    document.body.innerHTML = `<div><input aria-label="Amount" value="5"><div><button>Send money</button></div></div>`;
+    const button = document.querySelector("button")!;
+    const before = formState(button, null);
+    document.querySelector("input")!.value = "5000";
+    expect(changesBetween(before, formState(button, null))).toEqual(["Amount"]);
   });
 });

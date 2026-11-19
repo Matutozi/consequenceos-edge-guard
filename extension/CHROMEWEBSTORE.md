@@ -83,7 +83,7 @@ Gemini Nano's one-line view instead; retake them there if you want that state sh
 | Permission | Type | Justification |
 |------------|------|---------------|
 | `storage` | permissions | Keeps the on/off setting and the list of recent decisions in the user's browser, and holds a paused action while its approval window is open. |
-| `http://*/*`, `https://*/*` (content script, shown as "Host permission" in the dashboard) | content_scripts matches | The extension must see a click on a "Pay", "Send", "Delete" or "Share" button on any site in order to pause it, including inside embedded frames, where checkouts and sharing dialogs often are, and must read a page to find hidden instructions aimed at AI agents. It reads button labels, the names and labels of form fields, and page text; it never reads what the user types into forms (only whether a password field is filled, to stop a password going to another site). |
+| `http://*/*`, `https://*/*` (content script, shown as "Host permission" in the dashboard) | content_scripts matches | The extension must see a click on a "Pay", "Send", "Delete" or "Share" button on any site in order to pause it, including inside embedded frames, where checkouts and sharing dialogs often are, and must read a page to find hidden instructions aimed at AI agents. It reads button labels, the names and labels of form fields, and page text. What the user types into a form is never stored or transmitted: it is only compared in memory, before a paused click is sent, to check the form did not change while the user decided (and a password field is checked only for being filled, to stop a password going to another site). |
 
 ## Privacy & Data Use
 
@@ -95,7 +95,7 @@ Gemini Nano's one-line view instead; retake them there if you want that state sh
 |-----------|-----------|------------------------|---------|---------------------------|
 | Personally identifiable info | No | No | | No |
 | Health info | No | No | | No |
-| Financial info | No | No | Card numbers are never read; only whether a form has a card field | No |
+| Financial info | No | No | Never stored or sent. A paused form's contents are compared in memory to check they did not change before sending | No |
 | Authentication info | No | No | Only whether a password field is filled; never its value | No |
 | Personal communications | No | No | | No |
 | Location | No | No | | No |

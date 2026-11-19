@@ -33,6 +33,7 @@ interface Loaded {
   rivalRuns: string[];
   /** Entries for this receipt ID that failed verification and were set aside. */
   ignored: number;
+  complete: boolean;
 }
 
 
@@ -118,7 +119,7 @@ export default function VerifyPage({ receiptId }: { receiptId?: string }) {
   useEffect(() => {
     if (!loaded) return;
     let current = true;
-    void checkLoggedReceipt(tampered?.doc ?? loaded.original, loaded.run, loaded.approver, loaded.rivalRuns).then(
+    void checkLoggedReceipt(tampered?.doc ?? loaded.original, loaded.run, loaded.approver, loaded.rivalRuns, loaded.complete).then(
       (c) => current && setChecks(c),
     );
     return () => {

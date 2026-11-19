@@ -29,6 +29,11 @@ repository owner with a description, reproduction steps, and potential impact.
 - The audit log in Cloud Firestore is append-only by security rule. Each entry's outcome
   and approval are signed by the run's key, and entries take random IDs, so an entry
   written first by someone else can neither block the genuine one nor pass verification.
+  Verify reads every entry for a receipt ID, up to 1,000, so junk that sorts first cannot
+  hide the genuine one; past 1,000 it fails the receipt as flooded rather than show a subset.
+- The extension approves what a form will send, not just the button: a form changed while
+  the person decides (values, hidden fields, where it sends) is not sent, and an allowance
+  covers only the replayed click itself.
 - The planner is told only that a call was refused, never which rule refused it. App Check is
   enforced for Firestore and Firebase AI Logic.
 - Hosting sends a Content Security Policy, `frame-ancestors 'none'` and

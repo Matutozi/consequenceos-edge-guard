@@ -298,8 +298,10 @@ an approval request carries it to the phone. If only the receipt were signed, an
 log the genuine receipt first, as "rejected" with no approval, and the Verify page would
 show it as consistent. So the run's key also signs the entry (run, receipt, approval and
 outcome), and entries take random document IDs, so an entry written first cannot block the
-genuine one. A receipt can collect several entries; Verify uses the one that verifies
-against its run's key and sets the others aside. If a different run logs a re-signed copy
+genuine one. A receipt can collect several entries; Verify reads all of them (in pages, up
+to 1,000) and uses the one that verifies against its run's key, setting the others aside.
+Reading only a first page would not do: whoever appends chooses the document IDs, and junk
+that sorts first could fill it. Past 1,000 entries, Verify fails the receipt as flooded. If a different run logs a re-signed copy
 of the same receipt, both verify against their own keys, and Verify reports a conflict
 instead of a pass. Entries logged before outcomes were signed fail that check.
 
@@ -684,8 +686,8 @@ that period:
   the cloud.
 - **The log can be cluttered, not rewritten.** Anyone can append entries for a receipt
   ID. Unsigned ones are set aside, and a re-signed copy from another run shows as a
-  conflict, so a receipt can be made to fail verification but not to pass with a false
-  outcome. Server-side writes or signed-in writers would remove the conflict case.
+  conflict, and more than 1,000 entries fail it as flooded, so a receipt can be made to fail
+  verification but not to pass with a false outcome. Server-side writes or signed-in writers would remove the conflict case.
 - **The planner is not told why a call was refused,** only that it was, so a hijacked
   agent cannot use the reasons (for example the allowed domains) to search for a way
   around a rule. The reasons are in the receipt and the inspector.

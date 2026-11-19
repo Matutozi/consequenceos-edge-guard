@@ -34,9 +34,15 @@ rules first, then the assessor through Firebase AI Logic, then the same determin
   asks Gemini Nano with `InferenceMode.ONLY_ON_DEVICE`; without Nano, only the rules run.
 - **For an action, the AI sees only the button's label, the action type, the site names and
   the page title.** The site names are the site the click was on and, for a click inside an
-  embedded frame (a checkout or a share dialog), the site of the page around it. Never the page's text, never what was typed into a form. Only then, and only for
+  embedded frame (a checkout or a share dialog), the site of the page around it. Never the
+  page's text, never what was typed into a form. Only then, and only for
   messages and deletions, may it reach Gemini in the cloud: when Nano is missing, or to
   double-check an allow. Payments, sharing and passwords never go to the cloud.
+- **What you approve is what is sent.** When a click is paused, Edge Guard notes what the
+  form would send (every field's value, hidden fields included, and where it sends them) and
+  compares it again just before replaying the click. If anything changed while you decided,
+  or the button is gone, nothing is sent and it says which fields changed. The comparison is
+  in the content script's memory only; values are never stored, logged or sent.
 - History stays in the browser (`chrome.storage.local`, last 50 decisions).
 
 ## Install (judges and testers)
@@ -121,6 +127,8 @@ model; without Nano, a payment never reaches the cloud).
   (`co.uk`, `com.au`, `github.io`, `web.app`...), not the full Public Suffix List. A host under a
   suffix it does not know counts as one site with its neighbours.
 - **Replaying an allowed click** uses a scripted click. A few sites ignore those; clicking
-  again works, because the allowance is remembered for that one click.
+  again asks again, because an allowance covers only the replayed click itself, never a later one.
+- **A form changed by the page after the replay** (a site that edits its own form in its
+  submit handler) is outside what Edge Guard compares.
 - **The App Check debug token** is a hackathon arrangement, not a distribution model.
   A store release needs a proper attestation provider or a small backend.
