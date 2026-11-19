@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- The download contains a temporary access key for the judging period: keep it out of search engines. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Get Edge Guard for Chrome</title>
+    <meta name="description" content="Edge Guard pauses payments, messages, deletions and sharing until you approve them, and warns about hidden instructions aimed at AI agents." />
+    <link rel="icon" href="/favicon.svg" />
+    <link rel="stylesheet" href="./get.css" />
+  </head>
+  <body>
+    <header>
+      <img src="/favicon.svg" width="40" height="40" alt="" />
+      <div>
+        <h1>Edge Guard for Chrome</h1>
+        <p>Stops AI agents, and web pages, from paying, sending, deleting or sharing without your OK.</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div>
+          <ul class="points">
+            <li><strong>Warns about hidden traps.</strong> Finds text you can't see that is written to steer an AI agent, and shows it to you.</li>
+            <li><strong>Asks before anything risky.</strong> Payments, messages, deletions and sharing wait for your OK, in a window the page can't click.</li>
+            <li><strong>Private.</strong> Page content never leaves your computer.</li>
+          </ul>
+          <a class="download" href="./edge-guard-extension.zip" download>Download Edge Guard (48 KB)</a>
+          <p class="small">Version 0.1.0 · For Google Chrome 138 or later on a computer (Windows, Mac, Linux or ChromeOS); phones are not supported · Free</p>
+        </div>
+        <img class="shot" src="./approval.png" width="1280" height="800" alt="Edge Guard pausing a $1,240 payment and asking the user to allow or block it" />
+      </section>
+
+      <section>
+        <h2>Install it in about a minute</h2>
+        <p class="lead">
+          Edge Guard is not in the Chrome Web Store yet, so Chrome needs four small steps instead of
+          one click. You only do this once.
+        </p>
+        <ol class="steps">
+          <li>
+            <h3>Unzip the download</h3>
+            <p><strong>Windows:</strong> right-click <code>edge-guard-extension.zip</code> in your Downloads, choose <em>Extract All</em>, then <em>Extract</em>.<br />
+            <strong>Mac:</strong> double-click the file. You get a folder called <code>edge-guard-extension</code>.<br />
+            Keep that folder: Chrome runs Edge Guard from it, so don't delete it afterwards.</p>
+          </li>
+          <li>
+            <h3>Open Chrome's extensions page</h3>
+            <p>Copy this address, paste it into Chrome's address bar and press Enter. (Chrome doesn't let websites link to it directly.)</p>
+            <p class="copy"><code id="address">chrome://extensions</code> <button type="button" id="copy">Copy</button></p>
+          </li>
+          <li>
+            <h3>Turn on <em>Developer mode</em></h3>
+            <p>It's a switch in the top-right corner of that page. It only lets Chrome add extensions from a folder; you can turn it off again afterwards and Edge Guard keeps working.</p>
+          </li>
+          <li>
+            <h3>Click <em>Load unpacked</em> and pick the folder</h3>
+            <p>The button appears top-left. Choose the <code>edge-guard-extension</code> folder from step 1. Edge Guard appears in the list with a purple shield.</p>
+          </li>
+        </ol>
+        <p class="lead">
+          <strong>Then:</strong> click the puzzle piece next to the address bar and pin Edge Guard. Open it once: if your
+          computer can run Google's on-device AI (Gemini Nano), click <em>Download Gemini Nano</em> so checks run
+          privately. Without it, Edge Guard still pauses risky actions and asks you.
+        </p>
+      </section>
+
+      <section class="try">
+        <div>
+          <h2>Try it safely</h2>
+          <p>
+            Open our pretend travel shop. It hides three instructions aimed at AI agents, and its buttons do nothing real.
+            Edge Guard should warn you within a few seconds; then try <em>Pay</em>, <em>Delete saved card</em> and <em>Sign in</em>.
+          </p>
+          <a class="button" href="/agent-demo/">Open the demo shop</a>
+        </div>
+        <img class="shot" src="./warning.png" width="1280" height="800" alt="Edge Guard warning that a page hides three instructions aimed at AI" />
+      </section>
+
+      <section>
+        <h2>Good to know</h2>
+        <ul class="points">
+          <li><strong>What it can see:</strong> button labels and page text, on your computer. It never reads what you type into forms. <a href="/extension-privacy/">Privacy policy</a>.</li>
+          <li><strong>Updates:</strong> download again and repeat step 4 with the new folder; or click the circular arrow on Edge Guard in <code>chrome://extensions</code> after replacing the folder.</li>
+          <li><strong>To remove it:</strong> <code>chrome://extensions</code>, then <em>Remove</em> on Edge Guard.</li>
+          <li><strong>Built for the #BuildHybridAI 2026 hackathon.</strong> The open-source code is on <a href="https://github.com/Matutozi/consequenceos-edge-guard">GitHub</a>.</li>
+        </ul>
+      </section>
+    </main>
+    <script src="./get.js"></script>
+  </body>
+</html>

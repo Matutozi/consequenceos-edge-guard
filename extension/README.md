@@ -39,12 +39,19 @@ rules first, then the assessor through Firebase AI Logic, then the same determin
 
 ## Install (judges and testers)
 
-**From the Chrome Web Store (unlisted):** the link will be in the submission once the
-store's review is done. One click on **Add to Chrome**.
+**Download page:** <https://edge-guard-f1314.web.app/extension/> has the download and four
+illustrated steps written for non-technical people. It is not in the Chrome Web Store, and
+Chrome only installs from the store with one click, so it uses Developer mode's
+**Load unpacked**. The page is kept out of search engines, because the download carries the
+App Check debug token for the judging period.
 
-**Until then, from the zip:**
+To publish a new version: `npm run release:extension`, then
+`npx firebase-tools deploy --only hosting`. The zip is copied next to the page at build time
+and is never committed.
 
-1. Download `edge-guard-extension.zip` from the link in the submission and unzip it.
+**The short version:**
+
+1. Download `edge-guard-extension.zip` and unzip it.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the
    unzipped folder.
 3. Pin Edge Guard from the puzzle-piece menu. Open its popup and, if offered, click

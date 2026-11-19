@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:extension": "vite build -c vite.extension.config.ts && EXTENSION_PART=content vite build -c vite.extension.config.ts",
-    "zip:extension": "npm run build:extension && cd extension/dist && rm -f ../edge-guard-extension.zip && python3 -m zipfile -c ../edge-guard-extension.zip * && echo extension/edge-guard-extension.zip"
+    "zip:extension": "npm run build:extension && cd extension/dist && rm -f ../edge-guard-extension.zip && python3 -m zipfile -c ../edge-guard-extension.zip * && echo extension/edge-guard-extension.zip",
+    "release:extension": "npm run zip:extension && cp extension/edge-guard-extension.zip public/extension/edge-guard-extension.zip && npm run build && echo 'Ready: npx firebase-tools deploy --only hosting'"
   },
   "dependencies": {
     "firebase": "^13.0.0",

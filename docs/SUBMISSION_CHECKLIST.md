@@ -14,7 +14,8 @@ status. Never put credentials, debug tokens, or private submission answers here.
 - [x] Chrome extension (`extension/`): hidden-instruction scan and pause-and-approve for risky clicks, on the shared guard.
 - [ ] Test the extension in Chrome with Gemini Nano ready: scan with an AI check, a message allowed after the cloud second opinion. **Owner action**
 - [ ] Create an App Check debug token for the extension, add it to `.env.local`, rebuild, zip. **Owner action**
-- [ ] Share the extension zip with judges (not in the public repo); revoke the token after judging.
+- [x] Download page for the extension: https://edge-guard-f1314.web.app/extension/ (zip not in the repo; `npm run release:extension`, then deploy hosting).
+- [ ] Revoke the `chrome-extension-judging` App Check debug token after judging.
 - [x] Call Firebase AI Logic from application code.
 - [x] Prefer Gemini Nano on-device with Firebase cloud fallback.
 - [x] Display the actual inference source.

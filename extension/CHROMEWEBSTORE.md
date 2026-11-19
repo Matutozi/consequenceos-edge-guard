@@ -2,7 +2,9 @@
 
 > Last Updated: 2026-11-19
 
-Status: **ready to submit as Unlisted** (anyone with the link can install it; it does not
+Status: **not submitted for now**; the extension is distributed from
+<https://edge-guard-f1314.web.app/extension/> with Load unpacked instead. Everything below is
+ready if that changes: **ready to submit as Unlisted** (anyone with the link can install it; it does not
 appear in search). The build includes the App Check debug token `chrome-extension-judging`
 so the cloud path works for judges; anyone who installs it can read that token, so revoke it
 after judging (`npx firebase-tools appcheck:debugtokens:delete <id> --app <appId>`).

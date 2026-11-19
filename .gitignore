@@ -19,3 +19,4 @@ android/.kotlin/
 # Chrome extension builds: they contain the App Check debug token
 extension/dist
 extension/*.zip
+public/extension/*.zip
