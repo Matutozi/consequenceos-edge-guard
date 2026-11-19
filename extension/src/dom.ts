@@ -1,12 +1,13 @@
 /** Builds an element with text only: page-supplied strings never become HTML. */
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  props: { className?: string; text?: string } = {},
+  props: { className?: string; text?: string; role?: string } = {},
   ...children: (Node | string)[]
 ): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (props.className) node.className = props.className;
   if (props.text !== undefined) node.textContent = props.text;
+  if (props.role) node.setAttribute("role", props.role);
   node.append(...children);
   return node;
 }

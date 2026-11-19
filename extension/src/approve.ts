@@ -1,9 +1,11 @@
 import { el } from "./dom";
 import { pendingKey, type HistoryItem, type Pending, type ToBackground, type ToContent } from "./messages";
+import { automationWarning } from "./trust";
 
 /**
- * The approval window. It is an extension page in its own window, so neither the page that
- * asked nor an agent driving that page can press its buttons.
+ * The approval window. It is an extension page in its own window, so the page that asked, and
+ * an agent working through that page, cannot press its buttons. An agent that drives the whole
+ * browser or computer can; see trust.ts.
  */
 const main = document.getElementById("main")!;
 const id = new URLSearchParams(location.search).get("id") ?? "";
@@ -35,6 +37,7 @@ async function render(): Promise<void> {
     return;
   }
   const blocked = pending.result.decision === "deny";
+  const automationNotice = automationWarning(navigator);
   document.title = blocked ? "Edge Guard blocked an action" : "Edge Guard: your answer is needed";
 
   const allow = el("button", { className: blocked ? "" : "primary", text: blocked ? "Allow anyway" : "Allow once" });
@@ -74,6 +77,7 @@ async function render(): Promise<void> {
       { className: "muted" },
       "If you didn't click this yourself, an AI agent or the page may have. When in doubt, block it.",
     ),
+    ...(automationNotice ? [el("div", { className: "box deny", role: "alert" }, el("p", { text: automationNotice }))] : []),
     el("div", { className: "actions" }, block, allow),
     el("p", { className: "muted mono", text: `Receipt ${pending.result.digest.slice(0, 16)}…` }),
   );

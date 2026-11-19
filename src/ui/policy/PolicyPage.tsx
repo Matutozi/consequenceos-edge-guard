@@ -172,7 +172,11 @@ export default function PolicyPage() {
           <span className="presets">
             <span className="quiet">
               {changed ? "Differs from the live policy" : "Same as the live policy"}. Live:{" "}
-              {live.source === "remote-config" ? "Firebase Remote Config" : "bundled with the app"}
+              {live.source === "remote-config"
+                ? "Firebase Remote Config"
+                : live.unreachable
+                  ? "the strictest policy, because Remote Config could not be read"
+                  : "bundled with the app"}
               {live.policyTightened.length ? `, ${live.policyTightened.length} fields tightened` : ""}.
             </span>
             <button type="button" className="btn btn-sm" onClick={reset} disabled={!changed}>

@@ -1,4 +1,4 @@
-import { DEFAULT_POLICY, parsePolicy, type PolicyConfig } from "../domain/policyConfig";
+import { DEFAULT_POLICY, parsePolicy, STRICTEST_POLICY, type PolicyConfig } from "../domain/policyConfig";
 import { defaultRegistry, INTERNAL_DOMAINS, type ToolMeta, type ToolRegistry } from "./registry";
 import type { DataSensitivity } from "../domain/types";
 
@@ -16,6 +16,12 @@ export interface LoadedRegistry {
   rejected: string[];
   /** Why the bundled defaults were used, when they were. */
   fallbackReason?: string;
+  /**
+   * Remote Config could not be reached or read, so what is published is unknown: it may be
+   * stricter than what is bundled (a tool revoked, a threshold lowered). The bundled registry
+   * is used with the strictest policy, so a person approves every call a rule does not deny.
+   */
+  unreachable: boolean;
   /** The adjustable thresholds. The default policy until one is published. */
   policy: PolicyConfig;
   /** Policy fields that were malformed in Remote Config and fell back to their strictest value. */
@@ -99,14 +105,21 @@ export function parseDomains(json: string): string[] {
   return domains;
 }
 
-export const bundledRegistry = (fallbackReason?: string): LoadedRegistry => ({
+/**
+ * The registry bundled with the app. With nothing published, its default policy applies.
+ * When Remote Config could not be read (`unreachable`), the strictest policy applies instead:
+ * falling back to the defaults would let a fetch failure, or someone blocking the request,
+ * undo whatever was published to tighten them.
+ */
+export const bundledRegistry = (fallbackReason?: string, { unreachable = false } = {}): LoadedRegistry => ({
   registry: defaultRegistry,
   internalDomains: INTERNAL_DOMAINS,
   source: "bundled-defaults",
   rejected: [],
   fallbackReason,
-  policy: DEFAULT_POLICY,
-  policyTightened: [],
+  unreachable,
+  policy: unreachable ? STRICTEST_POLICY : DEFAULT_POLICY,
+  policyTightened: unreachable ? (Object.keys(STRICTEST_POLICY) as (keyof PolicyConfig)[]) : [],
 });
 
 /** An unpublished policy means the defaults; a published but malformed one tightens. */
@@ -122,9 +135,10 @@ export function policyFromRemote(source: string, json: string): { policy: Policy
 }
 
 /**
- * Loads the tool registry from Firebase Remote Config. If Remote Config is
- * unreachable, has no template yet, or holds invalid JSON, the registry bundled
- * with the app is used and the reason is reported.
+ * Loads the tool registry from Firebase Remote Config. With no template published yet, the
+ * registry and policy bundled with the app are used. If Remote Config is unreachable or holds
+ * invalid JSON, the bundled registry is used with the strictest policy (see bundledRegistry).
+ * Either way the reason is reported.
  */
 export async function loadToolRegistry(): Promise<LoadedRegistry> {
   try {
@@ -160,10 +174,12 @@ export async function loadToolRegistry(): Promise<LoadedRegistry> {
     const policyValue = rc.getValue(remoteConfig, POLICY_PARAM);
     const { policy, tightened } = policyFromRemote(policyValue.getSource(), policyValue.asString());
 
-    return { registry, internalDomains, source: "remote-config", rejected, policy, policyTightened: tightened };
+    return { registry, internalDomains, source: "remote-config", rejected, unreachable: false, policy, policyTightened: tightened };
   } catch (caught) {
+    // Unreachable, or published but unreadable: what is published is unknown, so be strictest.
     return bundledRegistry(
       `Remote Config could not be loaded: ${caught instanceof Error ? caught.message : "unknown error"}`,
+      { unreachable: true },
     );
   }
 }

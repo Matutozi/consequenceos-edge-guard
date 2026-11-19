@@ -10,7 +10,8 @@ never sees. Edge Guard stands between the agent and the consequences:
   computer only.
 - **It pauses risky clicks.** Payments, messages, deletions, sharing changes and passwords sent
   to another site wait until Edge Guard has decided. The approval opens in its own window,
-  outside the page, where neither the page nor an agent driving it can press the buttons.
+  outside the page, where the page's own code and an agent working through the page cannot
+  press its buttons. An agent that drives the whole browser or computer can (see Known limits).
 - **It explains every decision in plain words,** and keeps a history with a receipt digest.
 
 It uses the same engine as the Edge Guard web app (`src/domain`, `src/ai/analyzeAction.ts`):
@@ -108,8 +109,14 @@ model; without Nano, a payment never reaches the cloud).
   servers are out of reach.
 - **It cannot tell an agent's click from a person's,** so it pauses risky actions whoever
   clicks. That is why it stays out of ordinary clicks entirely.
-- **Agents that control the whole computer** (not just the page) could click the approval
-  window too. The phone approver from the web app is the stronger answer there.
+- **Agents that drive the whole browser or computer can press Allow.** That includes agents
+  that click by screenshot and mouse, and agents that use Chrome's debugging protocol. To the
+  approval window their clicks look like a person's, so it does not claim otherwise; when
+  Chrome reports that it is run by automation (`navigator.webdriver`), the window says so and
+  tells the person to block it if they did not start that software. Agents that attach through
+  an extension's debugger do not set that flag. Only an approval outside the browser would stop
+  them: the web app's phone approver, or the computer's screen lock (a passkey prompt), which
+  the extension does not have yet.
 - **What it recognises.** It reads every label a control has, the visible text and the
   aria-label, aria-labelledby and title an agent reads, so "Continue" labelled "Pay now" is a
   payment. A long button label is read by its first words; a long link is taken for content.

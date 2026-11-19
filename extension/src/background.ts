@@ -43,9 +43,9 @@ const historyItem = (action: PageAction, outcome: HistoryItem["outcome"], by: st
 });
 
 /**
- * The approval lives in its own window, outside the page. A page, or an agent driving the
- * page, can click anything inside the page, including an "Allow" button drawn there; it
- * cannot reach this window.
+ * The approval lives in its own window, outside the page. A page, or an agent working through
+ * the page, can click anything inside the page, including an "Allow" button drawn there; it
+ * cannot reach this window. An agent that drives the whole browser or computer can (trust.ts).
  */
 async function askPerson(tabId: number, frameId: number, action: PageAction, result: GuardResponse["result"]): Promise<GuardResponse> {
   const id = crypto.randomUUID();

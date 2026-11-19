@@ -311,9 +311,9 @@ function registryLine(registry?: LoadedRegistry): string {
     const rejected = registry.rejected.length ? `, ${registry.rejected.length} rejected` : "";
     return `Firebase Remote Config, ${Object.keys(registry.registry).length} tools${rejected}`;
   }
-  return registry.fallbackReason?.includes("no tool_registry")
-    ? "bundled with the app (not published to Remote Config yet)"
-    : "bundled with the app (Remote Config unreachable)";
+  return registry.unreachable
+    ? "bundled with the app, strictest policy: Remote Config could not be read, so a person approves every call a rule does not block"
+    : "bundled with the app (not published to Remote Config yet)";
 }
 
 type Tab = "directory" | "customers" | "audit" | "outbox";

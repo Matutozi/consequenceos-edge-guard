@@ -47,8 +47,12 @@ export const DEFAULT_POLICY: PolicyConfig = {
   secondOpinionForDeviceAllows: true,
 };
 
-/** The value each field falls back to when it is malformed: the strictest one. */
-const STRICTEST: PolicyConfig = {
+/**
+ * The value each field falls back to when it is malformed: the strictest one. Also the whole
+ * policy when the published one cannot be read at all: every call a rule does not deny goes
+ * to a person.
+ */
+export const STRICTEST_POLICY: PolicyConfig = {
   blockAtRisk: "high",
   approvalAtRisk: "low",
   irreversibleAllowedUpTo: "none",
@@ -97,7 +101,7 @@ export interface ParsedPolicy {
  */
 export function parsePolicy(value: unknown): ParsedPolicy {
   const raw = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
-  const policy = { ...STRICTEST } as Record<keyof PolicyConfig, unknown>;
+  const policy = { ...STRICTEST_POLICY } as Record<keyof PolicyConfig, unknown>;
   const tightened: (keyof PolicyConfig)[] = [];
   for (const key of Object.keys(checks) as (keyof PolicyConfig)[]) {
     if (checks[key](raw[key])) policy[key] = raw[key];

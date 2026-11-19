@@ -41,6 +41,10 @@ repository owner with a description, reproduction steps, and potential impact.
 
 ## Known boundaries
 
+- The extension's approval window is out of reach of the page and of an agent working
+  through the page, not of an agent that drives the whole browser or computer: those can
+  press Allow like a person. The window says so when Chrome reports automation.
+
 - The planner, guard, signer and executor run in one page. The receipt signature
   proves the executor checks Edge Guard's receipts, not that the signer is isolated
   from the agent. Phone approvals are the exception: a page that holds the run's key can

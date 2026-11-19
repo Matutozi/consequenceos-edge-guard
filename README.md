@@ -198,8 +198,12 @@ threshold and its default).
 
 Each entry is validated. A malformed entry is dropped, which makes that tool
 unregistered and therefore blocked, so a bad config can only make Edge Guard
-stricter. If Remote Config is unreachable or has no template, the registry bundled
-with the app is used, and the console says so. The template in
+stricter. If no template is published yet, the registry and policy bundled with the app
+are used. If Remote Config cannot be reached, or what is published cannot be read, Edge Guard
+does not know what is published, which may be stricter than what is bundled (a tool revoked,
+a threshold lowered). So it uses the bundled registry with the strictest policy: a person
+approves every call a rule does not block. A repeat visit uses the last registry it fetched.
+The console says which applies. The template in
 `remoteconfig.template.json` is generated from `src/ops/registry.ts` with
 `npx vite-node scripts/write-remoteconfig-template.ts`; a test fails if they drift.
 
@@ -522,8 +526,10 @@ clicks, types and buys in their own browser. Details, privacy and install steps 
   app: rules, then Gemini Nano (`PREFER_ON_DEVICE`), with a cloud second opinion before an
   allow on non-sensitive actions. What a model sees is the button label, the action type,
   the site and the page title, never page text or form input.
-- **The approval opens outside the page,** in its own window, so neither the page nor an
-  agent driving it can press Allow.
+- **The approval opens outside the page,** in its own window, so neither the page's code nor
+  an agent working through the page can press Allow. An agent that drives the whole browser or
+  computer can; the window says so when Chrome reports automation, and the phone approver is
+  the answer for that case (see the extension's Known limits).
 - **Firebase AI Logic in an extension.** reCAPTCHA cannot run there, so the extension uses
   an App Check debug token, which the hackathon accepts. It is inside the build: builds go
   to judges only and the token is revoked after judging. Without it, everything still works
