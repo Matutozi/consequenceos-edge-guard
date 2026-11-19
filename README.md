@@ -666,7 +666,9 @@ that period:
 - **One page, one trust boundary for receipts.** The planner, guard and executor run in
   the same page, so the receipt signature proves the executor checks Edge Guard's
   receipts, not that the signer is isolated from the agent. Approvals made on a paired
-  phone are the exception: they are signed in Android Keystore, outside the page.
+  phone are the exception: they are signed in Android Keystore, outside the page, and the
+  phone shows the call from the signed receipt, which it checks first, not from anything the
+  page wrote beside it.
 - **No sign-in.** Mei Lin is simulated. The audit log is readable by anyone, arguments
   included (see Audit log and verification). Anyone with a valid App Check token can
   append a run signed with their own key, or register a phone; a phone counts only

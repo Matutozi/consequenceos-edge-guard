@@ -10,6 +10,14 @@ executor runs anything.
   confidential or restricted data uses `ONLY_ON_DEVICE`: without Gemini Nano it gets a
   rule-based explanation and nothing is sent to the cloud. The screen says which path
   answered.
+- **What you see is what you sign.** Mei Lin signs the receipt's digest, so the screen is
+  built from the receipt alone. Before showing a request, the app recomputes the digest exactly
+  as the web app does (SHA-256 over canonical JSON, as JavaScript writes it), checks the
+  signature with the public key the run recorded in the audit log, and checks that Edge Guard
+  escalated the call. If any check fails it shows why, and offers no Approve button and no
+  explanation. The tool, arguments and reason the console also writes beside the receipt are
+  never shown: anyone who can write a request could make them say anything. The explainer
+  decides whether a call may go to the cloud from the receipt's data class too.
 - **Keystore signing.** An ECDSA P-256 key is generated in Android Keystore on first
   launch and never leaves it. Signatures are converted from DER to the raw form the
   console verifies with WebCrypto.
@@ -38,6 +46,20 @@ Then:
 ```bash
 ./gradlew :app:assembleDebug
 ```
+
+## Tests
+
+```bash
+./gradlew :app:testDebugUnitTest
+```
+
+`ReceiptCheckTest` checks the phone's receipt verification against receipts made by the
+TypeScript code, in `app/src/test/resources/receipt-vectors.json`: genuine escalations,
+awkward values (integer-like keys, which JavaScript writes first; numbers like `1e+21`;
+escapes and lone surrogates), and refusals (arguments changed after signing, another key, a
+call that was not escalated, a missing run). `src/ops/receiptVectors.test.ts` holds the same
+file to the TypeScript side. Regenerate it after changing receipts or signing:
+`npx vite-node scripts/write-receipt-vectors.ts`.
 
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. Install it on a phone (Android 8
 or later) by copying it over, or with `adb install`.

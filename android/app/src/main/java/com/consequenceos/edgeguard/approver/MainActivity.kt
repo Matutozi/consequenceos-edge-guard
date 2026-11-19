@@ -54,9 +54,9 @@ class MainActivity : Activity() {
                     setPadding(p, p, p, p)
                     background = Ui.box(context, Ui.SURFACE_2, Ui.BORDER)
                     layoutParams = ViewGroup.MarginLayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                    // From the receipt, not yet checked; the detail screen checks it before showing more.
                     addView(Ui.text(context, request.tool, 15f, bold = true, mono = true))
-                    val target = request.args.entries.joinToString(", ") { "${it.key}: ${it.value}" }
-                    addView(Ui.text(context, target, 13f, Ui.TEXT_2))
+                    addView(Ui.text(context, request.argsPreview, 13f, Ui.TEXT_2))
                     addView(Ui.text(context, "${request.system}, ${request.sensitivity} data, ${request.createdAt?.let { time.format(it) } ?: ""}", 12f, Ui.TEXT_3))
                 }
             }

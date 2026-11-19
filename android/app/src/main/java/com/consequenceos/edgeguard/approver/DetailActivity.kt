@@ -9,7 +9,6 @@ import android.widget.Toast
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import org.json.JSONObject
 
 /** One escalated call: what it does, why Edge Guard asked, an explanation, and a signed answer. */
 class DetailActivity : Activity() {
@@ -29,9 +28,27 @@ class DetailActivity : Activity() {
         Store.load(
             receiptId,
             onLoaded = { request ->
-                content.removeAllViews()
-                if (request == null) content.addView(Ui.text(this, "This request no longer exists.", 14f, Ui.DENY))
-                else render(content, request)
+                if (request == null) {
+                    content.removeAllViews()
+                    content.addView(Ui.text(this, "This request no longer exists.", 14f, Ui.DENY))
+                    return@load
+                }
+                // Nothing is shown, explained or signed until the receipt checks out: what Mei Lin
+                // signs is the receipt's digest, so the screen must show what that digest covers.
+                Store.verify(
+                    request,
+                    onResult = { result ->
+                        content.removeAllViews()
+                        when (result) {
+                            is ReceiptCheck.Result.Verified -> render(content, result.call)
+                            is ReceiptCheck.Result.Refused -> renderRefused(content, result.why)
+                        }
+                    },
+                    onError = { message ->
+                        content.removeAllViews()
+                        renderRefused(content, "The receipt could not be checked: $message")
+                    },
+                )
             },
             onError = { message ->
                 content.removeAllViews()
@@ -40,10 +57,26 @@ class DetailActivity : Activity() {
         )
     }
 
-    private fun render(content: LinearLayout, request: ApprovalRequest) {
+    /** A request that does not match its signed receipt: nothing to approve here. */
+    private fun renderRefused(content: LinearLayout, why: String) {
+        content.addView(Ui.text(this, "This request cannot be approved here", 12f, Ui.DENY, bold = true))
+        content.addView(Ui.text(this, why, 14f))
+        content.addView(
+            Ui.text(
+                this,
+                "Nothing was signed and nothing was sent. If you were expecting this call, approve or reject it in the Edge Guard console instead.",
+                14f,
+                Ui.TEXT_2,
+            ),
+        )
+    }
+
+    /** Everything shown here comes from the verified receipt. */
+    private fun render(content: LinearLayout, request: ReceiptCheck.SignedCall) {
         content.addView(Ui.text(this, "Needs your approval", 12f, Ui.REVIEW, bold = true))
+        content.addView(Ui.text(this, "Checked: this is the exact call in Edge Guard's signed receipt.", 12f, Ui.TEXT_3))
         content.addView(Ui.text(this, request.tool, 20f, bold = true, mono = true))
-        content.addView(Ui.text(this, JSONObject(request.args).toString(), 13f, Ui.TEXT_2, mono = true))
+        content.addView(Ui.text(this, ReceiptCheck.canonicalJson(request.args), 13f, Ui.TEXT_2, mono = true))
 
         content.addView(Ui.label(this, "Explanation"))
         val explanationText = Ui.text(this, "Preparing an explanation.", 14f, Ui.TEXT_2)

@@ -23,7 +23,9 @@ repository owner with a description, reproduction steps, and potential impact.
   wrongly signed receipt, a receipt for other arguments, a denied call, and an escalated
   call without a valid approval.
 - Phone approvals are signed with a key in Android Keystore and accepted only from a
-  phone paired in the console.
+  phone paired in the console. The phone shows only what it signs: it recomputes the
+  receipt's digest, checks the run's signature and that the call was escalated, and builds
+  the screen from the receipt, never from the unsigned copies of the call beside it.
 - The audit log in Cloud Firestore is append-only by security rule. Each entry's outcome
   and approval are signed by the run's key, and entries take random IDs, so an entry
   written first by someone else can neither block the genuine one nor pass verification.
@@ -36,7 +38,10 @@ repository owner with a description, reproduction steps, and potential impact.
 
 - The planner, guard, signer and executor run in one page. The receipt signature
   proves the executor checks Edge Guard's receipts, not that the signer is isolated
-  from the agent. Phone approvals are the exception.
+  from the agent. Phone approvals are the exception: a page that holds the run's key can
+  still ask the phone to approve a dangerous call, but the phone shows that call as it is.
+- The phone's Keystore key does not require the user to unlock it or use a biometric to
+  sign, and the console cannot check by key attestation that the key is in Keystore.
 - There is no sign-in. The audit log, including call arguments, is readable by anyone,
   and anyone with an App Check token can append a run signed with their own key. The
   demo data is fictional.

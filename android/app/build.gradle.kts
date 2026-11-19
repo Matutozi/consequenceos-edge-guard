@@ -47,4 +47,8 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore:27.2.0")
     implementation("com.google.firebase:firebase-appcheck-debug:20.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    // ReceiptCheckTest: plain JVM tests. The real org.json replaces the Android stub there.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20180813")
 }

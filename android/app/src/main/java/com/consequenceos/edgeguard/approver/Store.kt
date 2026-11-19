@@ -8,21 +8,29 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import java.time.Instant
 
-/** One escalated call waiting for Mei Lin, as the console wrote it. */
+/**
+ * One escalated call waiting for Mei Lin, as the console wrote it. Nothing in it is trusted
+ * until [Store.verify] has checked the receipt: the request also carries copies of the tool,
+ * arguments and reason, but anyone who can write a request can make those say anything, so
+ * they are never read. What she signs is the receipt's digest, so what she sees comes from it.
+ */
 data class ApprovalRequest(
     val receiptId: String,
-    val digest: String,
-    val tool: String,
-    val args: Map<String, Any?>,
-    val agent: String,
-    val reason: String,
-    val rationale: List<String>,
-    val system: String,
-    val sensitivity: String,
-    val reversible: Boolean,
-    val registered: Boolean,
+    val runId: String,
+    val receipt: Map<String, Any?>,
+    val signature: String?,
     val createdAt: Instant?,
-)
+) {
+    private val toolCall get() = receipt["toolCall"] as? Map<*, *>
+    private val proposal get() = receipt["proposal"] as? Map<*, *>
+
+    /** For the list only, before the receipt is checked. The detail screen shows nothing unverified. */
+    val tool: String get() = toolCall?.get("tool") as? String ?: "unknown tool"
+    val argsPreview: String get() =
+        (toolCall?.get("args") as? Map<*, *>)?.entries?.joinToString(", ") { "${it.key}: ${it.value}" } ?: ""
+    val system: String get() = proposal?.get("target") as? String ?: "unknown system"
+    val sensitivity: String get() = proposal?.get("dataSensitivity") as? String ?: "restricted"
+}
 
 data class Explanation(val text: String, val source: String)
 
@@ -82,19 +90,11 @@ object Store {
     @Suppress("UNCHECKED_CAST")
     private fun parse(id: String, data: Map<String, Any?>): ApprovalRequest? {
         val receipt = data["receipt"] as? Map<String, Any?> ?: return null
-        val entry = data["registryEntry"] as? Map<String, Any?> ?: emptyMap()
         return ApprovalRequest(
             receiptId = id,
-            digest = receipt["digest"] as? String ?: return null,
-            tool = data["tool"] as? String ?: "unknown",
-            args = data["args"] as? Map<String, Any?> ?: emptyMap(),
-            agent = data["agent"] as? String ?: "",
-            reason = data["reason"] as? String ?: "",
-            rationale = (data["rationale"] as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
-            system = entry["system"] as? String ?: "unknown system",
-            sensitivity = entry["sensitivity"] as? String ?: "restricted",
-            reversible = entry["reversible"] as? Boolean ?: false,
-            registered = entry["registered"] as? Boolean ?: false,
+            runId = data["runId"] as? String ?: "",
+            receipt = receipt,
+            signature = data["signature"] as? String,
             createdAt = (data["createdAt"] as? com.google.firebase.Timestamp)?.toDate()?.toInstant(),
         )
     }
@@ -121,23 +121,37 @@ object Store {
             .addOnFailureListener { onError(it.message ?: "Could not read the request.") }
     }
 
+    /**
+     * Checks the request's receipt against its digest and against the key its run recorded in
+     * the audit log (see [ReceiptCheck]). Only a verified call may be shown, explained or approved.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun verify(request: ApprovalRequest, onResult: (ReceiptCheck.Result) -> Unit, onError: (String) -> Unit) {
+        val check = { key: Map<String, Any?>? -> ReceiptCheck.check(request.receiptId, request.receipt, request.signature, key) }
+        if (request.runId.isEmpty()) return onResult(check(null))
+        db.collection("runs").document(request.runId).get()
+            .addOnSuccessListener { snap -> onResult(check(snap.get("publicKey") as? Map<String, Any?>)) }
+            .addOnFailureListener { onError(it.message ?: "Could not read the run that issued this request.") }
+    }
+
     /** The messages the console verifies; they must match src/ops/toolGuard.ts and approvals.ts. */
-    fun message(request: ApprovalRequest, approve: Boolean, decidedAt: String): String {
+    fun message(call: ReceiptCheck.SignedCall, approve: Boolean, decidedAt: String): String {
         val kind = if (approve) "approval" else "rejection"
-        return "edge-guard/$kind:${request.receiptId}:${request.digest}:$APPROVER_ID:$decidedAt"
+        return "edge-guard/$kind:${call.receiptId}:${call.digest}:$APPROVER_ID:$decidedAt"
     }
 
     /**
      * Signs the decision in Keystore and writes it under a new ID. A request can collect
      * several answers, so an answer written by anyone else cannot block this one; the
-     * console acts on the first answer signed by a paired key.
+     * console acts on the first answer signed by a paired key. Takes only a verified call, so
+     * nothing unchecked can be signed.
      */
-    fun answer(request: ApprovalRequest, approve: Boolean, explanation: Explanation?, onDone: (String?) -> Unit) {
+    fun answer(call: ReceiptCheck.SignedCall, approve: Boolean, explanation: Explanation?, onDone: (String?) -> Unit) {
         val decidedAt = Instant.now().toString()
-        val signature = ApproverKey.sign(message(request, approve, decidedAt))
+        val signature = ApproverKey.sign(message(call, approve, decidedAt))
         db.collection("approvalResponses").document().set(
             mapOf(
-                "receiptId" to request.receiptId,
+                "receiptId" to call.receiptId,
                 "decision" to if (approve) "approve" else "reject",
                 "approverId" to APPROVER_ID,
                 "keyId" to ApproverKey.fingerprint(),
@@ -147,7 +161,7 @@ object Store {
                 "respondedAt" to FieldValue.serverTimestamp(),
             ),
         ).addOnSuccessListener {
-            markAnswered(request.receiptId)
+            markAnswered(call.receiptId)
             onDone(null)
         }.addOnFailureListener { onDone(it.message) }
     }
