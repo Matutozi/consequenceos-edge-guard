@@ -317,7 +317,7 @@ export default function PolicyPage() {
             aria-label="Assessments to use"
             value={source}
             onChange={(e) => setSource(e.target.value as "baseline" | "last-run")}
-            style={{ width: "auto" }}
+            style={{ width: "auto", maxWidth: "100%", minWidth: 0 }}
           >
             <option value="baseline" disabled={!baselineReady}>
               {baselineReady ? `Published run (${baselineAssessments.model}, ${baselineAssessments.date})` : "Published run (not recorded yet)"}

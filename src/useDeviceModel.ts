@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   getDeviceModelStatus,
   prepareDeviceModel,
+  warmDeviceModel,
   type DeviceModelStatus,
 } from "./ai/analyzeAction";
 
@@ -22,7 +23,10 @@ export function useDeviceModel(): DeviceModel {
   const [error, setError] = useState("");
 
   const refresh = useCallback(async () => {
-    setStatus(await getDeviceModelStatus());
+    const next = await getDeviceModelStatus();
+    setStatus(next);
+    // Load the model into memory now, so the first check does not pay for it.
+    if (next === "available") void warmDeviceModel();
   }, []);
 
   useEffect(() => {

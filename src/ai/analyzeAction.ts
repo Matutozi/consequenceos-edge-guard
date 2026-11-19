@@ -225,6 +225,30 @@ export async function prepareDeviceModel(
   );
 }
 
+let warmSession: Promise<unknown> | undefined;
+
+/**
+ * Loads Gemini Nano into memory before the first check, when it is already downloaded.
+ * The SDK creates a session per request, and Chrome unloads the model when no session
+ * holds it, so without this the first check also pays for loading the model. This holds
+ * one idle session and never prompts it: every assessment still goes through Firebase AI
+ * Logic. It never starts a download, which needs the user's click (prepareDeviceModel).
+ */
+export function warmDeviceModel(): Promise<unknown> {
+  if (!hasOnDeviceApi()) return Promise.resolve(undefined);
+  warmSession ??= getDeviceModelStatus()
+    .then((status) => {
+      if (status !== "available") throw new Error(`Gemini Nano is ${status}.`);
+      const api = (globalThis as { LanguageModel?: { create(options: unknown): Promise<unknown> } }).LanguageModel;
+      return api!.create(languageOptions);
+    })
+    .catch(() => {
+      // Not ready yet, or Chrome refused: try again on the next call, and never block a check.
+      warmSession = undefined;
+    });
+  return warmSession;
+}
+
 export async function analyzeAction(
   proposal: ActionProposal,
   {

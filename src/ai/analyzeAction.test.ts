@@ -28,7 +28,7 @@ vi.mock("firebase/ai", () => ({
   },
 }));
 
-const { analyzeAction, AssessorTimeoutError, getDeviceModelStatus, OnDeviceUnavailableError } = await import(
+const { analyzeAction, AssessorTimeoutError, getDeviceModelStatus, OnDeviceUnavailableError, warmDeviceModel } = await import(
   "./analyzeAction"
 );
 
@@ -168,5 +168,26 @@ describe("getDeviceModelStatus", () => {
       availability: vi.fn().mockRejectedValue(new Error("boom")),
     };
     expect(await getDeviceModelStatus()).toBe("unavailable");
+  });
+});
+
+describe("warmDeviceModel", () => {
+  // The warm session is module state, so these run in order: the last one keeps it.
+  it("does nothing without the Prompt API", async () => {
+    await expect(warmDeviceModel()).resolves.toBeUndefined();
+  });
+
+  it("never starts a download, and loads the model once it is ready, without prompting it", async () => {
+    const create = vi.fn().mockResolvedValue({});
+    const availability = vi.fn().mockResolvedValue("downloadable");
+    (globalThis as { LanguageModel?: unknown }).LanguageModel = { availability, create };
+    await warmDeviceModel();
+    expect(create).not.toHaveBeenCalled();
+
+    availability.mockResolvedValue("available");
+    await warmDeviceModel();
+    await warmDeviceModel();
+    expect(create).toHaveBeenCalledOnce();
+    expect(sdk.generateContent).not.toHaveBeenCalled();
   });
 });
